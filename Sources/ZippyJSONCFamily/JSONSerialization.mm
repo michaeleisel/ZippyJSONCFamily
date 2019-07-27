@@ -14,8 +14,9 @@
 #import <stdio.h>
 #import <math.h>
 #import "libbase64.h"
+#import <string.h>
 
-#define SIJ
+// #define SIJ
 
 #ifdef SIJ
 using namespace simdjson;
@@ -106,18 +107,99 @@ JNTDecodingError *JNTFetchAndResetError() {
     return &tError;
 }
 
+static int sCount = 0;
+
+class EmptyHandler : public BaseReaderHandler<UTF8<>, EmptyHandler> {
+public:
+    bool Null() {
+        sCount++;
+        return true;
+    }
+
+    bool Bool(bool b) {
+        sCount++;
+        return true;
+    }
+
+    bool Int(int i) {
+        Int64(i);
+        return true;
+    }
+
+    bool Uint(unsigned u) {
+        Int64(u);
+        return true;
+    }
+
+    bool Int64(int64_t i) {
+        sCount++;
+        return true;
+    }
+
+    bool Uint64(uint64_t u) {
+        sCount++;
+        return true;
+    }
+
+    bool Double(double d) {
+        sCount++;
+        return true;
+    }
+
+    bool String(const char* str, SizeType length, bool copy) {
+        sCount++;
+        return true;
+    }
+
+    bool StartObject() {
+        sCount++;
+        return true;
+    }
+
+    bool Key(const char* str, SizeType length, bool copy) {
+        sCount++;
+        return true;
+    }
+
+    bool EndObject(SizeType memberCount) {
+        sCount++;
+        return true;
+    }
+
+    bool StartArray() {
+        sCount++;
+        return true;
+    }
+
+    bool EndArray(SizeType elementCount) {
+        sCount++;
+        return true;
+    }
+};
+
+#ifdef SIJ
 __thread ParsedJson *doc = NULL;
-__thread const char *tLastKey = NULL;
+#endif
+__thread char *tLastKey = NULL;
 
 const void *JNTDocumentFromJSON(const void *data, NSInteger length) {
-#ifdef SIJ
     char *bytes = (char *)data;
+#ifdef SIJ
     simdjson::ParsedJson *pj = new simdjson::ParsedJson;
     pj->allocateCapacity(length); // todo: why warning?
     const int res = simdjson::json_parse((const char *)data, length, *pj); // todo: handle error code
     assert(!res);
     return new ParsedJson::iterator(*pj);
 #else
+
+    /*EmptyHandler handler;
+    Reader reader;
+    StringStream ss(bytes);
+    reader.Parse<kParseFullPrecisionFlag>(ss, handler);
+    if (rand() % 100000 == 0) {
+        printf("%d\n", sCount);
+    }*/
+
     Document *d = new Document; // needs freeing later via JNTReleaseDocument
     d->Parse(bytes);
     // check for error
@@ -139,21 +221,36 @@ void JNTReleaseDocument(const void *document) {
 
 
 #ifdef SIJ
+
 bool JNTMoveToKey(ParsedJson::iterator *iterator, const char *key) {
+    if (tLastKey == NULL) {
+        tLastKey = (char *)malloc(5000);
+    }
+    if (strcmp(key, tLastKey) == 0) {
+        printf("%s cashed\n", key);
+        return true;
+    }
+    printf("%s search\n", key);
     bool found = iterator->move_to_key(key);
-    tLastKey = found ? key : NULL;
+    if (found) {
+        strcpy(tLastKey, key);
+    }
     return found;
 }
 
 BOOL JNTDocumentContains(const void *valueAsVoid, const char *key, bool convertCase) {
     ParsedJson::iterator *iter = (ParsedJson::iterator *)valueAsVoid;
     bool found = false;
+    const char *actualKey = NULL;
     if (convertCase) {
         JNTUpdateBufferForSnakeCase(key);
-        return JNTMoveToKey(iter, key);
+        actualKey = tSnakeCaseBuffer.string;
     } else {
-        return JNTMoveToKey(iter, key);
+        actualKey = key;
     }
+    bool result = JNTMoveToKey(iter, actualKey);
+    iter->up();
+    return result;
 }
 
 bool JNTIsAtEnd(const void *valueAsVoid) {
@@ -653,16 +750,30 @@ const char *JNTSnakeCaseFromCamel(const char *key) {
     return tSnakeCaseBuffer.string;
 }
 
+#ifndef SIJ
+
+static void JNTPrintValue(Value *value) {
+    printf("Value: %s\n", JNTStringForType(value->GetType()));
+    if (value->IsObject()) {
+    } else if (value->IsArray()) {
+    }
+}
+
+#endif
+
 #ifdef SIJ
+
+// std::vector<ParsedJson::iterator> iterators();
+// static const int kIteratorAccount
+// ParsedJson::iterator iterators[kIteratorCount];
 
 __attribute__((always_inline)) const void *JNTDocumentFetchValue(const void *valueAsVoid, const char *key, bool convertCase) {
     ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
-    if (tLastKey != key) {
-        if (convertCase) {
-            JNTUpdateBufferForSnakeCase(key);
-        }
-        value->move_to_key(key);
+    if (convertCase) {
+        assert(false);
+        JNTUpdateBufferForSnakeCase(key);
     }
+    assert(JNTMoveToKey(value, key));
     return value;
 }
 
@@ -698,17 +809,6 @@ NSInteger JNTDocumentGetArrayCount(const void *valueAsVoid) {
         return 0;
     }
     return value->GetArray().Size();
-}
-
-#endif
-
-#ifndef SIJ
-
-static void JNTPrintValue(Value *value) {
-    printf("Value: %s\n", JNTStringForType(value->GetType()));
-    if (value->IsObject()) {
-    } else if (value->IsArray()) {
-    }
 }
 
 #endif
@@ -767,3 +867,5 @@ void JNTRunTests() {
 // todo: cases where it fails but continues like when it tries to decode data from a string probably needs to be fixed
 // todo: make sure that base64 works and does not overflow the buffer
 // todo: cindy json does not support 32-bit
+
+// todo: swift seems to be fetching keys excessively
