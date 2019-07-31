@@ -9,14 +9,16 @@
 #import "rapidjson/allocators.h"
 #import "rapidjson/document.h"
 #import "rapidjson/writer.h"
+#import "rapidjson/allocators.h"
 #import "simdjson.h"
 #import <Foundation/Foundation.h>
 #import <stdio.h>
 #import <math.h>
 #import "libbase64.h"
 #import <string.h>
+#import <vector>
 
-// #define SIJ
+#define SIJ
 
 #ifdef SIJ
 using namespace simdjson;
@@ -109,6 +111,8 @@ JNTDecodingError *JNTFetchAndResetError() {
 
 static int sCount = 0;
 
+#ifndef SIJ
+
 class EmptyHandler : public BaseReaderHandler<UTF8<>, EmptyHandler> {
 public:
     bool Null() {
@@ -177,10 +181,14 @@ public:
     }
 };
 
+#endif
+
 #ifdef SIJ
 __thread ParsedJson *doc = NULL;
 #endif
 __thread char *tLastKey = NULL;
+// __thread rapidjson::MemoryPoolAllocator<> *allocator = NULL;
+__thread std::vector<ParsedJson::iterator> *tIterators;
 
 const void *JNTDocumentFromJSON(const void *data, NSInteger length) {
     char *bytes = (char *)data;
@@ -188,8 +196,9 @@ const void *JNTDocumentFromJSON(const void *data, NSInteger length) {
     simdjson::ParsedJson *pj = new simdjson::ParsedJson;
     pj->allocateCapacity(length); // todo: why warning?
     const int res = simdjson::json_parse((const char *)data, length, *pj); // todo: handle error code
+    // allocator = new rapidjson::MemoryPoolAllocator<>();
     assert(!res);
-    return new ParsedJson::iterator(*pj);
+    return new ParsedJson::iterator(*pj); // descend?
 #else
 
     /*EmptyHandler handler;
@@ -210,8 +219,8 @@ const void *JNTDocumentFromJSON(const void *data, NSInteger length) {
 
 void JNTReleaseDocument(const void *document) {
 #ifdef SIJ
-    delete (ParsedJson::iterator *)document;
     delete (ParsedJson *)doc;
+    // delete allocator;
 #else
     delete (Document *)document;
 #endif
@@ -239,8 +248,8 @@ bool JNTMoveToKey(ParsedJson::iterator *iterator, const char *key) {
 }
 
 BOOL JNTDocumentContains(const void *valueAsVoid, const char *key, bool convertCase) {
-    ParsedJson::iterator *iter = (ParsedJson::iterator *)valueAsVoid;
     bool found = false;
+    ParsedJson::iterator *iterator = (ParsedJson::iterator *)valueAsVoid;
     const char *actualKey = NULL;
     if (convertCase) {
         JNTUpdateBufferForSnakeCase(key);
@@ -248,8 +257,7 @@ BOOL JNTDocumentContains(const void *valueAsVoid, const char *key, bool convertC
     } else {
         actualKey = key;
     }
-    bool result = JNTMoveToKey(iter, actualKey);
-    iter->up();
+    bool result = JNTMoveToKey(iterator, actualKey);
     return result;
 }
 

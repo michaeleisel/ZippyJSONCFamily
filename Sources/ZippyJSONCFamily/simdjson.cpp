@@ -1,4 +1,4 @@
-/* auto-generated on Thu Jul 11 09:40:22 EDT 2019. Do not edit! */
+/* auto-generated on Tue Jul 30 20:02:49 EDT 2019. Do not edit! */
 #include "simdjson.h"
 
 /* used for http://dmalloc.com/ Dmalloc - Debug Malloc Library */
@@ -401,6 +401,7 @@ ParsedJson build_parsed_json(const uint8_t *buf, size_t len, bool reallocifneede
 // File kept in case we want to reuse it soon. (many configuration files to edit)
 /* end file src/stage2_build_tape.cpp */
 /* begin file src/parsedjson.cpp */
+#import <cstddef>
 
 namespace simdjson {
 ParsedJson::ParsedJson() : 
@@ -725,29 +726,29 @@ bool ParsedJson::dump_raw_tape(std::ostream &os) {
 /* end file src/parsedjson.cpp */
 /* begin file src/parsedjsoniterator.cpp */
 #include <iterator>
+#import <ostream>
 
 namespace simdjson {
-ParsedJson::iterator::iterator(ParsedJson &pj_) : pj(pj_), depth(0), location(0), tape_length(0), depthindex(nullptr) {
+ParsedJson::iterator::iterator(ParsedJson &pj_) : pj(pj_), depth(0), location(0), tape_length(0) {
         if(!pj.isValid()) {
             throw InvalidJSON();
         }
-        depthindex = new scopeindex_t[pj.depthcapacity];
         // memory allocation would throw
         //if(depthindex == nullptr) { 
         //    return;
         //}
-        depthindex[0].start_of_scope = location;
+        depthindex.start_of_scope = location;
         current_val = pj.tape[location++];
         current_type = (current_val >> 56);
-        depthindex[0].scope_type = current_type;
+        depthindex.scope_type = current_type;
         if (current_type == 'r') {
             tape_length = current_val & JSONVALUEMASK;
             if(location < tape_length) {
                 current_val = pj.tape[location];
                 current_type = (current_val >> 56);
                 depth++;
-                depthindex[depth].start_of_scope = location;
-                depthindex[depth].scope_type = current_type;
+                depthindex.start_of_scope = location;
+                depthindex.scope_type = current_type;
               }
         } else {
             // should never happen
@@ -756,16 +757,12 @@ ParsedJson::iterator::iterator(ParsedJson &pj_) : pj(pj_), depth(0), location(0)
 }
 
 ParsedJson::iterator::~iterator() {
-      delete[] depthindex;
 }
 
 ParsedJson::iterator::iterator(const iterator &o):
     pj(o.pj), depth(o.depth), location(o.location),
     tape_length(0), current_type(o.current_type),
-    current_val(o.current_val), depthindex(nullptr) {
-    depthindex = new scopeindex_t[pj.depthcapacity];
-    // allocation might throw
-    memcpy(depthindex, o.depthindex, pj.depthcapacity * sizeof(depthindex[0]));
+    current_val(o.current_val), depthindex(o.depthindex) {
     tape_length = o.tape_length;
 }
 
@@ -773,7 +770,6 @@ ParsedJson::iterator::iterator(iterator &&o):
       pj(o.pj), depth(o.depth), location(o.location),
       tape_length(o.tape_length), current_type(o.current_type),
       current_val(o.current_val), depthindex(o.depthindex) {
-        o.depthindex = nullptr;// we take ownership
 }
 
 bool ParsedJson::iterator::print(std::ostream &os, bool escape_strings) const {
