@@ -188,17 +188,20 @@ __thread ParsedJson *doc = NULL;
 #endif
 __thread char *tLastKey = NULL;
 // __thread rapidjson::MemoryPoolAllocator<> *allocator = NULL;
-__thread std::vector<ParsedJson::iterator> *tIterators;
+__thread std::deque<ParsedJson::iterator> *tIterators;
 
 const void *JNTDocumentFromJSON(const void *data, NSInteger length) {
     char *bytes = (char *)data;
 #ifdef SIJ
     simdjson::ParsedJson *pj = new simdjson::ParsedJson;
     pj->allocateCapacity(length); // todo: why warning?
+    tIterators = new std::deque<ParsedJson::iterator>();
     const int res = simdjson::json_parse((const char *)data, length, *pj); // todo: handle error code
     // allocator = new rapidjson::MemoryPoolAllocator<>();
     assert(!res);
-    return new ParsedJson::iterator(*pj); // descend?
+    tIterators->emplace_back(ParsedJson::iterator(*pj));
+    tIterators->back().down();
+    return &(tIterators->back());
 #else
 
     /*EmptyHandler handler;
@@ -220,6 +223,7 @@ const void *JNTDocumentFromJSON(const void *data, NSInteger length) {
 void JNTReleaseDocument(const void *document) {
 #ifdef SIJ
     delete (ParsedJson *)doc;
+    delete tIterators;
     // delete allocator;
 #else
     delete (Document *)document;
@@ -257,14 +261,14 @@ BOOL JNTDocumentContains(const void *valueAsVoid, const char *key, bool convertC
     } else {
         actualKey = key;
     }
-    bool result = JNTMoveToKey(iterator, actualKey);
-    return result;
+    iterator->prev();
+    return iterator->search_for_key(actualKey, strlen(actualKey));
 }
 
 bool JNTIsAtEnd(const void *valueAsVoid) {
     ParsedJson::iterator *iter = (ParsedJson::iterator *)valueAsVoid;
     bool isAtEnd = !iter->next();
-    iter->prev();
+    iter->prev(); // todo: test empty arrays
     return isAtEnd;
 }
 
@@ -502,10 +506,12 @@ namespace Converter {
     }
 
     void Object(ParsedJson::iterator *value) {
+        assert(false);
         value->down();
     }
 
     void Array(ParsedJson::iterator *value) {
+        assert(false);
         value->down();
     }
 }
@@ -564,15 +570,17 @@ T JNTDocumentDecode(ParsedJson::iterator *value) {
     return result;
 }
 
-const void *JNTDocumentDecodeArrayStart(const void *valueAsVoid) {
-    ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
-    value->down();
-    return value;
+const void *JNTDocumentEnterDictionary(const void *valueAsVoid) {
+    ParsedJson::iterator *iterator = (ParsedJson::iterator *)valueAsVoid;
+    tIterators->emplace_back(*iterator);
+    tIterators->back().down();
+    return &(tIterators->back());
 }
 
-const void *JNTDocumentNextArrayElement(const void *iteratorAsVoid) {
+const void *JNTDocumentNextArrayElement(const void *iteratorAsVoid, bool *isAtEnd) {
     ParsedJson::iterator *iterator = (ParsedJson::iterator *)iteratorAsVoid;
-    iterator->next();
+    *isAtEnd = !iterator->next();
+    //tIterators->at(0); // todo: a
     return iterator;
 }
 
@@ -776,14 +784,21 @@ static void JNTPrintValue(Value *value) {
 // ParsedJson::iterator iterators[kIteratorCount];
 
 __attribute__((always_inline)) const void *JNTDocumentFetchValue(const void *valueAsVoid, const char *key, bool convertCase) {
-    ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
+    ParsedJson::iterator *iterator = (ParsedJson::iterator *)valueAsVoid;
     if (convertCase) {
         assert(false);
         JNTUpdateBufferForSnakeCase(key);
     }
-    assert(JNTMoveToKey(value, key));
-    return value;
+    iterator->prev();
+    assert(iterator->search_for_key(key, strlen(key)));
+    if (iterator->is_object_or_array()) {
+        tIterators->emplace_back(*iterator);
+        tIterators->back().down();
+        return &(tIterators->back());
+    }
+    return iterator;
 }
+// todo: case where iterator starts searching at end of scope, ie '}'
 
 NSInteger JNTDocumentGetArrayCount(const void *valueAsVoid) {
     ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
