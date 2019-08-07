@@ -13,6 +13,7 @@ typedef CF_ENUM(size_t, JNTDecodingErrorType) {
     JNTDecodingErrorTypeValueDoesNotExist,
     JNTDecodingErrorTypeNumberDoesNotFit,
     JNTDecodingErrorTypeWrongType,
+    JNTDecodingErrorTypeJSONParsingFailed
 };
 
 typedef struct {
@@ -20,19 +21,25 @@ typedef struct {
     JNTDecodingErrorType type;
 } JNTDecodingError;
 
-BOOL JNTDocumentContains(const void *valueAsVoid, const char *key, bool convertCase);
+BOOL JNTDocumentContains(const void *valueAsVoid, const char *key);
 bool JNTIsString(const void *valueAsVoid);
 BOOL JNTDocumentDecodeNil(const void *documentPtr);
 void JNTReleaseDocument(const void *document);
-const void *JNTDocumentFromJSON(const void *data, NSInteger length);
-const void *JNTDocumentEnterDictionary(const void *valueAsVoid);
-const void *JNTDocumentNextArrayElement(const void *iterator, bool *isAtEnd);
+const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase);
+void JNTDocumentNextArrayElement(const void *iterator, bool *isAtEnd);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
 bool JNTAcquireThreadLock();
 void JNTReleaseThreadLock();
 bool JNTIsAtEnd(const void *valueAsVoid);
+bool JNTDocumentValueIsArray(const void *iteratorAsVoid);
+const void *JNTDocumentEnterStructureAndReturnCopy(const void *iteratorAsVoid);
+bool JNTDocumentValueIsDictionary(const void *iteratorAsVoid);
+NSArray <NSString *> *JNTDocumentAllKeys(const void *valueAsVoid);
+NSArray <id> *JNTDocumentCodingPath(const void *iteratorAsVoid);
+void JNTDocumentForAllKeyValuePairs(const void *iteratorAsVoid, void (^callback)(const char *key, const void *iteratorAsVoid));
+void JNTConvertSnakeToCamel(const void *iterator);
 
-const void *JNTDocumentFetchValue(const void *value, const char *key, bool convertCase);
+const void *JNTDocumentFetchValue(const void *value, const char *key);
 
 double JNTDocumentDecode__Double(const void *value);
 float JNTDocumentDecode__Float(const void *value);
@@ -53,8 +60,6 @@ NSInteger JNTDocumentGetArrayCount(const void *value);
 @end
 
 JNTDecodingError *JNTFetchAndResetError();
-
-NSArray <JNTCodingPath *> *JNTComputeCodingPath(const void * const *containers, NSInteger count);
 
 #define DECODE_KEYED_HEADER(A, B, C, D) DECODE_KEYED_HEADER_NAMED(A, B, C, D, A)
 

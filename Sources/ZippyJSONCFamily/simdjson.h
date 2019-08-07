@@ -36685,6 +36685,10 @@ public:
       return  reinterpret_cast<const char *>(pj.string_buf + (current_val & JSONVALUEMASK) + sizeof(uint32_t)) ;
     }
 
+    inline void set_string_length(uint32_t length) {
+        memcpy(reinterpret_cast<char *>(pj.string_buf + (current_val & JSONVALUEMASK)), &length, sizeof(uint32_t));
+    }
+
     // return the length of the string in bytes
     inline uint32_t get_string_length() const {
       uint32_t answer;
@@ -36785,7 +36789,7 @@ public:
     // Moves back to either the containing array or object (type { or [) from
     // within a contained scope.
     // Valid unless we are at the first level of the document
-    inline bool up();
+    // inline bool up();
 
 
     // Valid if we're at a [ or { and it starts a non-empty scope; moves us to start of
@@ -36923,7 +36927,7 @@ void ParsedJson::iterator::move_to_value() {
 }
 
 
-bool ParsedJson::iterator::move_to_key(const char * key) {
+/*bool ParsedJson::iterator::move_to_key(const char * key) {
     if(down()) {
       do {
         assert(is_string());
@@ -36951,11 +36955,10 @@ bool ParsedJson::iterator::move_to_key(const char * key, uint32_t length) {
       assert(up());// not found
     }
     return false;
-}
+}*/
 
 bool ParsedJson::iterator::search_for_key(const char * key, uint32_t length) {
     bool hasHitEnd = false;
-    // todo: how does it work when next() is called and hits a non-string?
     uint32_t start_loc = location;
     //printf("search %s\n", key);
     do {
@@ -36996,7 +36999,7 @@ bool ParsedJson::iterator::search_for_key(const char * key, uint32_t length) {
 }
 
 
- bool ParsedJson::iterator::up() {
+ /*bool ParsedJson::iterator::up() {
     if(depth == 1) {
       return false; // don't allow moving back to root
     }
@@ -37007,7 +37010,7 @@ bool ParsedJson::iterator::search_for_key(const char * key, uint32_t length) {
     current_val = pj.tape[location];
     current_type = (current_val >> 56);
     return true;
-}
+}*/
 
 
  bool ParsedJson::iterator::down() {
