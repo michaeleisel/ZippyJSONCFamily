@@ -9,6 +9,12 @@
 /* begin file src/simdjson.cpp */
 #include <map>
 
+void foundInvalidNumber(const uint8_t *buf) {
+    ;
+}
+void foundInteger(long long, unsigned char const*) {}
+void foundFloat(double, unsigned char const*) {}
+
 namespace simdjson {
 const std::map<int, const std::string> errorStrings = {
     {SUCCESS, "No errors"},
