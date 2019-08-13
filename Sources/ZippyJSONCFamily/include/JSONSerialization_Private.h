@@ -13,7 +13,8 @@ typedef CF_ENUM(size_t, JNTDecodingErrorType) {
     JNTDecodingErrorTypeValueDoesNotExist,
     JNTDecodingErrorTypeNumberDoesNotFit,
     JNTDecodingErrorTypeWrongType,
-    JNTDecodingErrorTypeJSONParsingFailed
+    JNTDecodingErrorTypeJSONParsingFailed,
+    JNTDecodingErrorTypeWentPastEndOfArray
 };
 
 typedef struct {
@@ -24,7 +25,6 @@ typedef struct {
 } JNTDecodingError;
 
 BOOL JNTDocumentContains(const void *valueAsVoid, const char *key);
-bool JNTIsString(const void *valueAsVoid);
 BOOL JNTDocumentDecodeNil(const void *documentPtr);
 void JNTReleaseDocument(const void *document);
 const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char **retryReason);

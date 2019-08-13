@@ -39,6 +39,8 @@ static __thread char *tPosInfString;
 static __thread char *tNegInfString;
 static __thread char *tNanString;
 
+// static const size_t kPreviousLocationLimit = 20;
+// static __thread size_t tPreviousLocation[kPreviousLocationLimit];
 
 // todo: static everywhere that it should be
 
@@ -62,37 +64,44 @@ static const char *JNTStringForType(uint8 type) {
     return "?";
 }
 
+static inline void JNTSetError(const char *description, JNTDecodingErrorType type, ParsedJson::iterator *iterator, const char *key) {
+    if (tError.type != JNTDecodingErrorTypeNone) {
+        return;
+    }
+    ParsedJson::iterator *value = iterator ? new ParsedJson::iterator(*iterator) : value;
+    if (key) {
+        key = strdup(key);
+    }
+    tError = {
+        .description = description,
+        .type = type,
+        .value = value,
+        .key = key,
+    };
+}
+
+static void JNTHandleWentPastEndOfArray(ParsedJson::iterator *iterator) {
+    const char *description = strdup("Unkeyed container is at end.");
+    JNTSetError(description, JNTDecodingErrorTypeWentPastEndOfArray, iterator, NULL);
+}
+
 static void JNTHandleJSONParsingFailed(int res) {
     char *description = nullptr;
     asprintf(&description, "The given data was not valid JSON. Error: %s", simdjson::errorMsg(res).c_str());
-    tError = {
-        .description = description,
-        .type = JNTDecodingErrorTypeJSONParsingFailed,
-    };
+    JNTSetError(description, JNTDecodingErrorTypeJSONParsingFailed, NULL, NULL);
 }
 
 static void JNTHandleWrongType(ParsedJson::iterator *iterator, uint8 type, const char *expectedType) {
     JNTDecodingErrorType errorType = type == 'n' ? JNTDecodingErrorTypeValueDoesNotExist : JNTDecodingErrorTypeWrongType;
     char *description = nullptr;
-    asprintf(&description, "Expected %s value but found %s instead.", JNTStringForType(type), expectedType);
-    ParsedJson::iterator *value = new ParsedJson::iterator(*iterator);
-    tError = {
-        .description = description,
-        .type = errorType,
-        .value = value,
-    };
+    asprintf(&description, "Expected %s value but found %s instead.", expectedType, JNTStringForType(type));
+    JNTSetError(description, errorType, iterator, NULL);
 }
 
 static void JNTHandleMemberDoesNotExist(ParsedJson::iterator *iterator, const char *key) {
-    NSString *message = [NSString stringWithFormat:@"No value associated with %s.", key];
     char *description = nullptr;
     asprintf(&description, "No value associated with %s.", key);
-    tError = {
-        .description = description,
-        .type = JNTDecodingErrorTypeKeyDoesNotExist,
-        .value = new ParsedJson::iterator(*iterator),
-        .key = key,
-    };
+    JNTSetError(description, JNTDecodingErrorTypeKeyDoesNotExist, iterator, key);
 }
 
 template <typename T>
@@ -100,11 +109,7 @@ static void JNTHandleNumberDoesNotFit(ParsedJson::iterator *iterator, T number, 
     char *description = nullptr;
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
     asprintf(&description, "Parsed JSON number %s does not fit in %s.", string.UTF8String, type);
-    tError = {
-        .description = description,
-        .type = JNTDecodingErrorTypeNumberDoesNotFit,
-        .value = new ParsedJson::iterator(*iterator),
-    };
+    JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, iterator, NULL);
 }
 
 static const size_t kSnakeCaseBufferInitialSize = 100;
@@ -130,67 +135,15 @@ static inline char JNTToLower(char c) {
     return JNTIsUpper(c) ? c + ('a' - 'A') : c;
 }
 
-static void JNTUpdateBufferForSnakeCase(const char *key) {
-    if (!tSnakeCaseBuffer.string) {
-        JNTStringGrow(&tSnakeCaseBuffer, kSnakeCaseBufferInitialSize);
-    }
-    size_t maxLength = strlen(key) * 2 + 2;
-    if (maxLength > tSnakeCaseBuffer.capacity) {
-        JNTStringGrow(&tSnakeCaseBuffer, maxLength);
-    }
-    char *snakeCurrent = tSnakeCaseBuffer.string;
-    char *debug = tSnakeCaseBuffer.string;
-    if (key[0] == '\0') {
-        *snakeCurrent = '\0';
-        return;
-    }
-
-    *snakeCurrent = JNTToLower(key[0]);
-    snakeCurrent++;
-    const char *currentPointer = &(key[1]);
-    const char *previousPointer = currentPointer;
-    char current = *currentPointer;
-    while (current != '\0') {
-        while (!JNTIsUpper(current) && current != '\0') {
-            *snakeCurrent = current;
-            snakeCurrent++;
-            currentPointer++;
-            current = *currentPointer;
-        }
-        if (current != '\0') {
-            *snakeCurrent = '_';
-            snakeCurrent++;
-        }
-        previousPointer = currentPointer;
-        while (!JNTIsLower(current) && current != '\0') {
-            *snakeCurrent = JNTToLower(current);
-            snakeCurrent++;
-
-            currentPointer++;
-            current = *currentPointer;
-        }
-        size_t distance = (size_t)(currentPointer - previousPointer);
-        if (distance >= 2 && current != '\0') {
-            char temp = snakeCurrent[-1];
-            snakeCurrent[-1] = '_';
-            *snakeCurrent = temp;
-            snakeCurrent++;
-        }
-        previousPointer = currentPointer;
-    }
-    *snakeCurrent = '\0';
-}
-
 JNTDecodingError *JNTError() {
     return &tError;
 }
 
-
 static std::mutex sEmptyDictionaryMutex;
 static ParsedJson *sEmptyDictionaryJson;
-static ParsedJson::iterator *sEmptyDictionaryIterator;
+static __thread ParsedJson::iterator *tEmptyDictionaryIterator;
 // Unless the lib ever supports custom key decoding, it will never try to lookup an empty string as a key
-static const char kEmptyDictionaryString[] = "{'': 0}";
+static const char kEmptyDictionaryString[] = "{\"\": 0}";
 static const char kEmptyDictionaryStringLength = sizeof(kEmptyDictionaryString) - 1;
 
 const void *JNTEmptyDictionaryIterator() {
@@ -200,14 +153,17 @@ const void *JNTEmptyDictionaryIterator() {
             sEmptyDictionaryJson = new ParsedJson;
             sEmptyDictionaryJson->allocateCapacity(kEmptyDictionaryStringLength);
             json_parse(kEmptyDictionaryString, kEmptyDictionaryStringLength, *sEmptyDictionaryJson);
-            sEmptyDictionaryIterator = new ParsedJson::iterator(*sEmptyDictionaryJson);
         }
         sEmptyDictionaryMutex.unlock();
     }
-    return sEmptyDictionaryIterator;
+    if (!tEmptyDictionaryIterator) {
+        tEmptyDictionaryIterator = new ParsedJson::iterator(*sEmptyDictionaryJson);
+        tEmptyDictionaryIterator->down();
+    }
+    return tEmptyDictionaryIterator;
 }
 
-inline uint32_t JNTReplaceSnakeWithCamel(char *string) {
+static inline uint32_t JNTReplaceSnakeWithCamel(char *string) {
     char *end = string + strlen(string);
     char *currString = string;
     JNTStringGrow(&tSnakeCaseBuffer, end - string + 1);
@@ -277,7 +233,7 @@ static inline bool JNTChecker(const char *s) {
 }
 
 // Check if there are any non-ASCII chars in the dictionary keys
-static bool JNTCheck(ParsedJson::iterator i) {
+static inline bool JNTCheck(ParsedJson::iterator i) {
     bool has = false;
     if (i.is_object()) {
         if (!i.down()) {
@@ -307,8 +263,8 @@ static bool JNTCheck(ParsedJson::iterator i) {
 
 // todo: what if simdjson is given "{2: "a"}"?
 
-__thread ParsedJson *doc = NULL;
-__thread std::deque<ParsedJson::iterator> *tIterators;
+static __thread ParsedJson *doc = NULL;
+static __thread std::deque<ParsedJson::iterator> *tIterators;
 
 const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason) {
     char *bytes = (char *)data;
@@ -341,6 +297,9 @@ void JNTReleaseDocument(const void *document) {
     if (tError.value != NULL) {
         delete ((ParsedJson::iterator *)tError.value);
     }
+    if (tError.key != NULL) {
+        free((void *)tError.key);
+    }
     tError = {0};
     if (tPosInfString) {
         free(tPosInfString);
@@ -349,8 +308,14 @@ void JNTReleaseDocument(const void *document) {
         tPosInfString = tNegInfString = tNanString = NULL;
     }
     delete (ParsedJson *)doc;
+    doc = NULL;
     delete tIterators;
+    tIterators = NULL;
+    delete tEmptyDictionaryIterator;
+    tEmptyDictionaryIterator = NULL;
+    // memset(tPreviousLocation, 0, sizeof(tPreviousLocation));
 }
+// todo: all thread-locals get reset here?
 
 BOOL JNTDocumentContains(const void *valueAsVoid, const char *key) {
     bool found = false;
@@ -443,7 +408,7 @@ namespace Converter {
 }
 
 template <typename T, typename U, bool (*TypeCheck)(ParsedJson::iterator *), U (*Convert)(ParsedJson::iterator *)>
-T JNTDocumentDecode(ParsedJson::iterator *value) {
+static inline T JNTDocumentDecode(ParsedJson::iterator *value) {
     if (unlikely(!TypeCheck(value))) {
         JNTHandleWrongType(value, value->get_type(), typeid(T).name());
         return 0;
@@ -467,12 +432,7 @@ BOOL JNTDocumentDecodeNil(const void *valueAsVoid) {
     return value->is_null();
 }
 
-bool JNTIsString(const void *valueAsVoid) {
-    ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
-    return value->is_string();
-}
-
-__thread bool tThreadLocked = false;
+static __thread bool tThreadLocked = false;
 
 bool JNTAcquireThreadLock() {
     bool threadWasLocked = tThreadLocked;
@@ -518,50 +478,38 @@ float JNTDocumentDecode__Float(const void *valueAsVoid) {
     return (float)d;
 }
 
-NSDecimalNumber *JNTDocumentDecode__Decimal(const void *valueAsVoid) {
-    // Value *value = (Value *)valueAsVoid;
-    abort();
-    return [[NSDecimalNumber alloc] initWithInt:0];
-}
-
-static int JNTDataFromBase64String(size_t inLength, int32_t *outLength, const char *str, char **outBuffer) {
+/*static int JNTDataFromBase64String(size_t inLength, int32_t *outLength, const char *str, char **outBuffer) {
     // *outBuffer = (char *)malloc(inLength * 3 / 4 + 4);
     // size_t outlen = 0;
     // int errorStatus = base64_decode(str, inLength, *outBuffer, &outlen, 0);
     // *outLength = (int32_t)outlen;
     // return errorStatus;
     return 0;
-}
+}*/ // todo: put back in
 
-void *JNTDocumentDecode__Data(const void *valueAsVoid, int32_t *outLength) {
+/*void *JNTDocumentDecode__Data(const void *valueAsVoid, int32_t *outLength) {
     abort();
-    /*Value *value = (Value *)valueAsVoid;
+    Value *value = (Value *)valueAsVoid;
     const char *str = JNTDocumentDecode__String(valueAsVoid);
     size_t inLength = value->GetStringLength();
     char *outBuffer = NULL;
     int errorStatus = JNTDataFromBase64String(inLength, outLength, str, &outBuffer);
     // todo: catch errors here
     // todo: compared to the default options of apples based sixty four decoder
-    return outBuffer;*/
-}
+    return outBuffer;
+}*/
 
-NSDate *JNTDocumentDecode__Date(const void *valueAsVoid) {
+/*NSDate *JNTDocumentDecode__Date(const void *valueAsVoid) {
     // Value *value = (Value *)valueAsVoid;
     abort();
     return [NSDate date];
-}
-
-// Test helper
-const char *JNTSnakeCaseFromCamel(const char *key) {
-    JNTUpdateBufferForSnakeCase(key);
-    return tSnakeCaseBuffer.string;
-}
+}*/
 
 // std::vector<ParsedJson::iterator> iterators();
 // static const int kIteratorAccount
 // ParsedJson::iterator iterators[kIteratorCount];
 
-bool JNTIteratorsEqual(ParsedJson::iterator *i1, ParsedJson::iterator *i2) {
+static bool JNTIteratorsEqual(ParsedJson::iterator *i1, ParsedJson::iterator *i2) {
     return i1->get_tape_location() == i2->get_tape_location();
 }
 
@@ -601,6 +549,7 @@ NSMutableArray <id> *JNTDocumentCodingPathHelper(ParsedJson::iterator iterator, 
             } while (iterator.next());
         }
     }
+    return [@[] mutableCopy];
 }
 
 NSArray <id> *JNTDocumentCodingPath(const void *iteratorAsVoid) {
@@ -653,23 +602,17 @@ const void *JNTDocumentEnterStructureAndReturnCopy(const void *iteratorAsVoid) {
     if (tIterators->back().down()) {
         return &(tIterators->back());
     } else {
-        if (tIterators->back().is_array()) {
-            tIterators->pop_back();
-            return NULL;
-        } else {
-            return sEmptyDictionaryJson;
-        }
+        tIterators->pop_back();
+        return NULL;
     }
 }
 
 __attribute__((always_inline)) const void *JNTDocumentFetchValue(const void *valueAsVoid, const char *key) {
     ParsedJson::iterator *iterator = (ParsedJson::iterator *)valueAsVoid;
     iterator->prev_string();
-    iterator->search_for_key(key, strlen(key));
-    // todo: handle key not found
-    /*if (iterator->is_object_or_array()) {
-        return JNTDocumentEnterStructureAndReturnCopy(iterator);
-    }*/
+    if (!iterator->search_for_key(key, strlen(key))) {
+        JNTHandleMemberDoesNotExist(iterator, key);
+    }
     return iterator;
 }
 // todo: case where iterator starts searching at end of scope, ie '}'
@@ -691,20 +634,6 @@ A JNTDocumentDecode__##E(const void *value) { \
     return JNTDocumentDecode<A, B, TypeChecker::C, Converter::D>((ParsedJson::iterator *)value); \
 }
 ENUMERATE(DECODE);
-
-void JNTRunTests() {
-    NSString *string = @"abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz";
-    for (NSUInteger i = 0; i < string.length; i++) {
-        NSString *substring = [string substringToIndex:i];
-        NSData *data = [[[NSData alloc] initWithBytes:substring.UTF8String length:i] base64EncodedDataWithOptions:0];
-        int32_t outLength = 0;
-        char *outBuffer = NULL;
-        JNTDataFromBase64String((size_t)data.length, &outLength, (const char *)data.bytes, &outBuffer);
-        assert(outLength == i && memcmp(string.UTF8String, outBuffer, outLength) == 0);
-    }
-}
-
-
 
 // todo: NSNull, UInt64, Int64
 // todo: concurrent usage
