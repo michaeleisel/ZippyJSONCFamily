@@ -38357,7 +38357,7 @@ namespace simdjson {
 // to std::numeric_limits<double>::max(), so from 
 // -1.7976e308 all the way to 1.7975e308 in binary64. The lowest non-zero
 // normal values is std::numeric_limits<double>::min() or about 2.225074e-308.
-static const double power_of_ten[] = {
+static const long double power_of_ten[] = {
     1e-308, 1e-307, 1e-306, 1e-305, 1e-304, 1e-303, 1e-302, 1e-301, 1e-300,
     1e-299, 1e-298, 1e-297, 1e-296, 1e-295, 1e-294, 1e-293, 1e-292, 1e-291,
     1e-290, 1e-289, 1e-288, 1e-287, 1e-286, 1e-285, 1e-284, 1e-283, 1e-282,
@@ -38721,6 +38721,51 @@ static never_inline bool parse_large_integer(const uint8_t *const buf,
   return is_structural_or_whitespace(*p);
 }
 
+static bool double_is_zero(const uint8_t *const start, const uint8_t *const end) {
+    if (start >= end) {
+        return false;
+    }
+    if (*start == '-') {
+        start++;
+    }
+    bool hasSeenDot = false;
+    for (char *curr = start; curr < end; curr++) {
+        if (curr == '.') {
+            if (hasSeenDot) {
+                return false;
+            } else {
+                hasSeenDot = false;
+            }
+        } else if (curr != '0') {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool parse_highprecision_float(const uint8_t *const buf, const uint32_t offset, const uint8_t *const p, bool found_minus) {
+    double result = strtod(buf + offset, p);
+    bool success = true;
+    if (result == 0.0) { // An error may have occurred, in which case determine whether the double is really 0.0
+        success = double_is_zero(buf + offset, p);
+    }
+    if (success) {
+        if (found_minus && result > 0) {
+            result = -result;
+        }
+        pj.write_tape_double(result);
+#ifdef JSON_TEST_NUMBERS // for unit testing
+        foundFloat(result, buf + offset);
+#endif
+        return is_structural_or_whitespace(*p);
+    } else {
+#ifdef JSON_TEST_NUMBERS // for unit testing
+        foundInvalidNumber(buf + offset);
+#endif
+        return false;
+    }
+}
+
 // parse the number at buf + offset
 // define JSON_TEST_NUMBERS for unit testing
 //
@@ -38871,24 +38916,33 @@ static really_inline bool parse_number(const uint8_t *const buf,
         // Ok, chances are good that we had an overflow!
         // this is almost never going to get called!!!
         // we start anew, going slowly!!!
-        return parse_float(buf, pj, offset,
-                                       found_minus);
-        
-      } 
+        pj.write_tape_double(strtod(buf + offset, NULL));
+        return is_structural_or_whitespace(*p);
+      }
     }
     if (unlikely((powerindex > 2 * 308))) { // this is uncommon!!!
       // this is almost never going to get called!!!
       // we start anew, going slowly!!!
-      return parse_float(buf, pj, offset,
-                                       found_minus);
     }
-    double factor = power_of_ten[powerindex];
-    factor = negative ? -factor : factor;
-    double d = i * factor;
-    pj.write_tape_double(d);
-#ifdef JSON_TEST_NUMBERS // for unit testing
-    foundFloat(d, buf + offset);
+    size_t powerLimit = 22;
+    uint64_t max = 9007199254740991.0;
+#ifdef __x86_64__
+    if (sizeof(long double) == 10) {
+        powerLimit = 27;
+        max = UINT64_MAX;
+    }
 #endif
+    if (-powerLimit <= exponent && exponent <= powerLimit && i <= max) {
+        long double factor = power_of_ten[powerindex];
+        factor = negative ? -factor : factor;
+        long double d = i * factor;
+        pj.write_tape_double(d);
+    #ifdef JSON_TEST_NUMBERS // for unit testing
+        foundFloat(d, buf + offset);
+    #endif
+    } else {
+        return parse_highprecision_float(buf, offset, p, negative);
+    }
   } else {
     if (unlikely(digitcount >= 18)) { // this is uncommon!!!
       // there is a good chance that we had an overflow, so we need

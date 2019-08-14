@@ -13,6 +13,8 @@
 #import <string.h>
 #import <atomic>
 #import <mutex>
+#import "rapidjson/internal/strtod.h"
+#import "rapidjson/document.h"
 
 using namespace simdjson;
 
@@ -68,7 +70,7 @@ static inline void JNTSetError(const char *description, JNTDecodingErrorType typ
     if (tError.type != JNTDecodingErrorTypeNone) {
         return;
     }
-    ParsedJson::iterator *value = iterator ? new ParsedJson::iterator(*iterator) : value;
+    ParsedJson::iterator *value = iterator ? new ParsedJson::iterator(*iterator) : NULL;
     if (key) {
         key = strdup(key);
     }
@@ -108,7 +110,7 @@ template <typename T>
 static void JNTHandleNumberDoesNotFit(ParsedJson::iterator *iterator, T number, const char *type) {
     char *description = nullptr;
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
-    asprintf(&description, "Parsed JSON number %s does not fit in %s.", string.UTF8String, type);
+    asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String); //, type);
     JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, iterator, NULL);
 }
 
@@ -262,6 +264,7 @@ static inline bool JNTCheck(ParsedJson::iterator i) {
 }
 
 // todo: what if simdjson is given "{2: "a"}"?
+// todo: clang static analyzer
 
 static __thread ParsedJson *doc = NULL;
 static __thread std::deque<ParsedJson::iterator> *tIterators;
@@ -269,6 +272,25 @@ static __thread std::deque<ParsedJson::iterator> *tIterators;
 const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason) {
     char *bytes = (char *)data;
     doc = new ParsedJson;
+    rapidjson::Document d;
+    char * buffer = 0;
+    long length2;
+    FILE * f = fopen ("/Users/michaeleisel/Documents/Projects/ZippyJSON/Tests/ZippyJSONTests/canada.json", "rb");
+
+    if (f)
+        {
+        fseek (f, 0, SEEK_END);
+        length2 = ftell (f);
+        fseek (f, 0, SEEK_SET);
+        buffer = (char *)malloc (length2 + 1);
+        if (buffer)
+            {
+            fread (buffer, 1, length2, f);
+            }
+        fclose (f);
+    }
+    buffer[length2] = '\0';
+    d.Parse<rapidjson::kParseFullPrecisionFlag>(buffer);
     doc->allocateCapacity(length); // todo: why warning?
     tIterators = new std::deque<ParsedJson::iterator>();
     const int res = json_parse((const char *)data, length, *doc); // todo: handle error code
@@ -276,7 +298,7 @@ const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convert
         if (res != NUMBER_ERROR) { // retry number errors
             JNTHandleJSONParsingFailed(res);
         } else {
-            *retryReason = "A number was too large (couldn't fit in a 64-bit integer, be it signed or unsigned)";
+            *retryReason = "A number was too large (couldn't fit in a 64-bit signed integer)";
         }
         return NULL;
     }
@@ -662,7 +684,6 @@ ENUMERATE(DECODE);
 // todo: make sure architecture optimizations are turned on or else it won't run correctly
 // todo: swift seems to be fetching keys excessively
 // todo: handle empty arrays
-// todo: use a pool of containers to avoid allocations?
 // todo: test when a float is attempted to be unwrapped as an int and vice versa
 // todo: simdjson stable version and not debug?
 // todo: swift 5.0?
