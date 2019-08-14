@@ -38357,7 +38357,7 @@ namespace simdjson {
 // to std::numeric_limits<double>::max(), so from 
 // -1.7976e308 all the way to 1.7975e308 in binary64. The lowest non-zero
 // normal values is std::numeric_limits<double>::min() or about 2.225074e-308.
-static const long double power_of_ten[] = {
+static const double power_of_ten[] = {
     1e-308, 1e-307, 1e-306, 1e-305, 1e-304, 1e-303, 1e-302, 1e-301, 1e-300,
     1e-299, 1e-298, 1e-297, 1e-296, 1e-295, 1e-294, 1e-293, 1e-292, 1e-291,
     1e-290, 1e-289, 1e-288, 1e-287, 1e-286, 1e-285, 1e-284, 1e-283, 1e-282,
@@ -38938,6 +38938,13 @@ static really_inline bool parse_number(const uint8_t *const buf,
 #ifdef JSON_TEST_NUMBERS // for unit testing
     foundFloat(d, buf + offset);
 #endif
+  } else {
+    if (unlikely(digitcount >= 18)) { // this is uncommon!!!
+      // there is a good chance that we had an overflow, so we need
+      // need to recover: we parse the whole thing again.
+      return parse_large_integer(buf, pj, offset,
+                                 found_minus);
+    }
     i = negative ? 0-i : i;
     pj.write_tape_s64(i);
 #ifdef JSON_TEST_NUMBERS // for unit testing
