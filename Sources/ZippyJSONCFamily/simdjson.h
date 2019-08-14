@@ -38923,33 +38923,16 @@ static really_inline bool parse_number(const uint8_t *const buf,
     if (unlikely((powerindex > 2 * 308))) { // this is uncommon!!!
       // this is almost never going to get called!!!
       // we start anew, going slowly!!!
+      return parse_float(buf, pj, offset,
+                                       found_minus);
     }
-    size_t powerLimit = 22;
-    uint64_t max = 9007199254740991.0;
-#ifdef __x86_64__
-    if (sizeof(long double) == 10) {
-        powerLimit = 27;
-        max = UINT64_MAX;
-    }
+    double factor = power_of_ten[powerindex];
+    factor = negative ? -factor : factor;
+    double d = i * factor;
+    pj.write_tape_double(d);
+#ifdef JSON_TEST_NUMBERS // for unit testing
+    foundFloat(d, buf + offset);
 #endif
-    if (-powerLimit <= exponent && exponent <= powerLimit && i <= max) {
-        long double factor = power_of_ten[powerindex];
-        factor = negative ? -factor : factor;
-        long double d = i * factor;
-        pj.write_tape_double(d);
-    #ifdef JSON_TEST_NUMBERS // for unit testing
-        foundFloat(d, buf + offset);
-    #endif
-    } else {
-        return parse_highprecision_float(buf, offset, p, negative);
-    }
-  } else {
-    if (unlikely(digitcount >= 18)) { // this is uncommon!!!
-      // there is a good chance that we had an overflow, so we need
-      // need to recover: we parse the whole thing again.
-      return parse_large_integer(buf, pj, offset,
-                                 found_minus);
-    }
     i = negative ? 0-i : i;
     pj.write_tape_s64(i);
 #ifdef JSON_TEST_NUMBERS // for unit testing
