@@ -38743,11 +38743,12 @@ static bool double_is_zero(const uint8_t *const start, const uint8_t *const end)
     return true;
 }
 
-static bool parse_highprecision_float(const uint8_t *const buf, const uint32_t offset, const uint8_t *const p, bool found_minus) {
-    double result = strtod(buf + offset, p);
+static bool parse_full_precision_float(const uint8_t *const buf, const uint32_t offset, bool found_minus) {
+    const uint8_t *end = NULL;
+    double result = strtod(buf + offset, &end);
     bool success = true;
     if (result == 0.0) { // An error may have occurred, in which case determine whether the double is really 0.0
-        success = double_is_zero(buf + offset, p);
+        success = double_is_zero(buf + offset, end);
     }
     if (success) {
         if (found_minus && result > 0) {
@@ -38829,6 +38830,9 @@ static really_inline bool parse_number(const uint8_t *const buf,
   int64_t exponent = 0;
   bool is_float = false;
   if ('.' == *p) {
+    if (pj.get_full_precision_float_parsing()) {
+        return parse_full_precision_float(buf, offset, found_minus);
+    }
     is_float = true; // At this point we know that we have a float
     // we continue with the fiction that we have an integer. If the
     // floating point number is representable as x * 10^z for some integer
@@ -38916,8 +38920,9 @@ static really_inline bool parse_number(const uint8_t *const buf,
         // Ok, chances are good that we had an overflow!
         // this is almost never going to get called!!!
         // we start anew, going slowly!!!
-        pj.write_tape_double(strtod(buf + offset, NULL));
-        return is_structural_or_whitespace(*p);
+        return parse_float(buf, pj, offset,
+                                       found_minus);
+
       }
     }
     if (unlikely((powerindex > 2 * 308))) { // this is uncommon!!!
