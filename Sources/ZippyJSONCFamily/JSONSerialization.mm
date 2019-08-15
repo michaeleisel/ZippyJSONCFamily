@@ -13,8 +13,6 @@
 #import <string.h>
 #import <atomic>
 #import <mutex>
-#import "rapidjson/internal/strtod.h"
-#import "rapidjson/document.h"
 
 using namespace simdjson;
 
@@ -269,28 +267,10 @@ static inline bool JNTCheck(ParsedJson::iterator i) {
 static __thread ParsedJson *doc = NULL;
 static __thread std::deque<ParsedJson::iterator> *tIterators;
 
-const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason) {
+const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
     char *bytes = (char *)data;
     doc = new ParsedJson;
-    rapidjson::Document d;
-    char * buffer = 0;
-    long length2;
-    FILE * f = fopen ("/Users/michaeleisel/Documents/Projects/ZippyJSON/Tests/ZippyJSONTests/canada.json", "rb");
-
-    if (f)
-        {
-        fseek (f, 0, SEEK_END);
-        length2 = ftell (f);
-        fseek (f, 0, SEEK_SET);
-        buffer = (char *)malloc (length2 + 1);
-        if (buffer)
-            {
-            fread (buffer, 1, length2, f);
-            }
-        fclose (f);
-    }
-    buffer[length2] = '\0';
-    d.Parse<rapidjson::kParseFullPrecisionFlag>(buffer);
+    doc->full_precision_float_parsing = fullPrecisionFloatParsing;
     doc->allocateCapacity(length); // todo: why warning?
     tIterators = new std::deque<ParsedJson::iterator>();
     const int res = json_parse((const char *)data, length, *doc); // todo: handle error code
@@ -347,85 +327,40 @@ BOOL JNTDocumentContains(const void *valueAsVoid, const char *key) {
 }
 
 namespace TypeChecker {
-    bool Object(ParsedJson::iterator *value) {
-        return value->is_object();
+    bool Double(ParsedJson::iterator *value) {
+        return value->is_double();
     }
-    struct Double {
-        bool operator() (ParsedJson::iterator *value) {
-            return value->is_double();
-        }
-    };
-    //struct Uint64 {
-    bool Uint64(ParsedJson::iterator *value) {
+    bool UInt64(ParsedJson::iterator *value) {
         return value->is_integer();
     }
-    //};
-    //struct Int64 {
     bool Int64(ParsedJson::iterator *value) {
         return value->is_integer();
     }
-    //};
     bool String(ParsedJson::iterator *value) {
         return value->is_string();
-    }
-
-    bool Size(ParsedJson::iterator *value) {
-        return value->is_integer();
-    }
-
-    bool USize(ParsedJson::iterator *value) {
-        return value->is_integer();
     }
 
     bool Bool(ParsedJson::iterator *value) {
         return value->is_true() || value->is_false();
     }
 
-    bool Array(ParsedJson::iterator *value) {
-        return value->is_array();
-    }
 }
 
 namespace Converter {
-    struct Double {
-        double operator() (ParsedJson::iterator *value) {
-            return value->get_double();
-        }
-    };
-    //struct Uint64 {
-    uint64_t Uint64(ParsedJson::iterator *value) {
+    double Double(ParsedJson::iterator *value) {
+        return value->get_double();
+    }
+    uint64_t UInt64(ParsedJson::iterator *value) {
         return value->get_integer();
     }
-    //};
-    //struct Int64 {
     int64_t Int64(ParsedJson::iterator *value) {
         return value->get_integer();
     }
-    //};
-    NSInteger Size(ParsedJson::iterator *value) {
-        return (NSInteger)value->get_integer();
-    }
-
-    NSUInteger USize(ParsedJson::iterator *value) {
-        return (NSUInteger)value->get_integer();
-    }
-
     const char *String(ParsedJson::iterator *value) {
         return value->get_string();
     }
-
     bool Bool(ParsedJson::iterator *value) {
         return value->is_true();
-    }
-
-    void Object(ParsedJson::iterator *value) {
-        assert(false);
-        value->down();
-    }
-
-    void Array(ParsedJson::iterator *value) {
-        assert(false);
-        value->down();
     }
 }
 
@@ -474,8 +409,8 @@ void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfS
 
 double JNTDocumentDecode__Double(const void *valueAsVoid) {
     ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
-    if (value->is_double()) {
-        return value->get_double();
+    if (TypeChecker::Double(value)) {
+        return Converter::Double(value);
     } else if (value->is_integer()){
         return (double)value->get_integer();
     } else {
@@ -499,37 +434,6 @@ float JNTDocumentDecode__Float(const void *valueAsVoid) {
     double d = JNTDocumentDecode__Double(value);
     return (float)d;
 }
-
-/*static int JNTDataFromBase64String(size_t inLength, int32_t *outLength, const char *str, char **outBuffer) {
-    // *outBuffer = (char *)malloc(inLength * 3 / 4 + 4);
-    // size_t outlen = 0;
-    // int errorStatus = base64_decode(str, inLength, *outBuffer, &outlen, 0);
-    // *outLength = (int32_t)outlen;
-    // return errorStatus;
-    return 0;
-}*/ // todo: put back in
-
-/*void *JNTDocumentDecode__Data(const void *valueAsVoid, int32_t *outLength) {
-    abort();
-    Value *value = (Value *)valueAsVoid;
-    const char *str = JNTDocumentDecode__String(valueAsVoid);
-    size_t inLength = value->GetStringLength();
-    char *outBuffer = NULL;
-    int errorStatus = JNTDataFromBase64String(inLength, outLength, str, &outBuffer);
-    // todo: catch errors here
-    // todo: compared to the default options of apples based sixty four decoder
-    return outBuffer;
-}*/
-
-/*NSDate *JNTDocumentDecode__Date(const void *valueAsVoid) {
-    // Value *value = (Value *)valueAsVoid;
-    abort();
-    return [NSDate date];
-}*/
-
-// std::vector<ParsedJson::iterator> iterators();
-// static const int kIteratorAccount
-// ParsedJson::iterator iterators[kIteratorCount];
 
 static bool JNTIteratorsEqual(ParsedJson::iterator *i1, ParsedJson::iterator *i2) {
     return i1->get_tape_location() == i2->get_tape_location();

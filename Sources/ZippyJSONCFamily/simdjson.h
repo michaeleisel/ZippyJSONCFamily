@@ -36824,7 +36824,8 @@ private:
     scopeindex_t depthindex;
   };
 
-  size_t bytecapacity{0};  // indicates how many bits are meant to be supported 
+  size_t bytecapacity{0};  // indicates how many bits are meant to be supported
+  bool full_precision_float_parsing = false;
 
   size_t depthcapacity{0}; // how deep we can go
   size_t tapecapacity{0};
@@ -38721,7 +38722,7 @@ static never_inline bool parse_large_integer(const uint8_t *const buf,
   return is_structural_or_whitespace(*p);
 }
 
-static bool double_is_zero(const uint8_t *const start, const uint8_t *const end) {
+static bool double_is_zero(const uint8_t *start, const uint8_t *const end) {
     if (start >= end) {
         return false;
     }
@@ -38729,23 +38730,23 @@ static bool double_is_zero(const uint8_t *const start, const uint8_t *const end)
         start++;
     }
     bool hasSeenDot = false;
-    for (char *curr = start; curr < end; curr++) {
-        if (curr == '.') {
+    for (const uint8_t *curr = start; curr < end; curr++) {
+        if (*curr == '.') {
             if (hasSeenDot) {
                 return false;
             } else {
                 hasSeenDot = false;
             }
-        } else if (curr != '0') {
+        } else if (*curr != '0') {
             return false;
         }
     }
     return true;
 }
 
-static bool parse_full_precision_float(const uint8_t *const buf, const uint32_t offset, bool found_minus) {
+static bool parse_full_precision_float(const uint8_t *const buf, const uint32_t offset, bool found_minus, ParsedJson &pj) {
     const uint8_t *end = NULL;
-    double result = strtod(buf + offset, &end);
+    double result = strtod((const char *)buf + offset, (char **)&end);
     bool success = true;
     if (result == 0.0) { // An error may have occurred, in which case determine whether the double is really 0.0
         success = double_is_zero(buf + offset, end);
@@ -38758,7 +38759,7 @@ static bool parse_full_precision_float(const uint8_t *const buf, const uint32_t 
 #ifdef JSON_TEST_NUMBERS // for unit testing
         foundFloat(result, buf + offset);
 #endif
-        return is_structural_or_whitespace(*p);
+        return is_structural_or_whitespace(*end);
     } else {
 #ifdef JSON_TEST_NUMBERS // for unit testing
         foundInvalidNumber(buf + offset);
@@ -38830,8 +38831,8 @@ static really_inline bool parse_number(const uint8_t *const buf,
   int64_t exponent = 0;
   bool is_float = false;
   if ('.' == *p) {
-    if (pj.get_full_precision_float_parsing()) {
-        return parse_full_precision_float(buf, offset, found_minus);
+    if (pj.full_precision_float_parsing) {
+        return parse_full_precision_float(buf, offset, found_minus, pj);
     }
     is_float = true; // At this point we know that we have a float
     // we continue with the fiction that we have an integer. If the

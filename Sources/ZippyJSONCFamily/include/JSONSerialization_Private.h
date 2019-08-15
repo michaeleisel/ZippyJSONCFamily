@@ -27,7 +27,7 @@ typedef struct {
 BOOL JNTDocumentContains(const void *valueAsVoid, const char *key);
 BOOL JNTDocumentDecodeNil(const void *documentPtr);
 void JNTReleaseDocument(const void *document);
-const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char **retryReason);
+const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
 void JNTDocumentNextArrayElement(const void *iterator, bool *isAtEnd);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
 bool JNTAcquireThreadLock();
@@ -82,10 +82,10 @@ F(uint16_t, int64_t, Int64, Int64); \
 F(int32_t, int64_t, Int64, Int64); \
 F(uint32_t, int64_t, Int64, Int64); \
 F(int64_t, int64_t, Int64, Int64); \
-F(uint64_t, uint64_t, Uint64, Uint64); \
+F(uint64_t, uint64_t, UInt64, UInt64); \
 F##_NAMED(const char *, const char *, String, String, String); \
-F##_NAMED(NSInteger, NSInteger, Size, Size, Int); \
-F##_NAMED(NSUInteger, NSUInteger, USize, USize, UInt);
+F##_NAMED(NSInteger, int64_t, Int64, Int64, Int); \
+F##_NAMED(NSUInteger, uint64_t, UInt64, UInt64, UInt);
 
 ENUMERATE(DECODE_HEADER);
 // ENUMERATE(DECODE_KEYED_HEADER);
