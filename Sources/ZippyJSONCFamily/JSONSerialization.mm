@@ -39,11 +39,6 @@ static __thread char *tPosInfString;
 static __thread char *tNegInfString;
 static __thread char *tNanString;
 
-// static const size_t kPreviousLocationLimit = 20;
-// static __thread size_t tPreviousLocation[kPreviousLocationLimit];
-
-// todo: static everywhere that it should be
-
 static const char *JNTStringForType(uint8 type) {
     switch (type) {
         case 'n':
@@ -78,11 +73,6 @@ static inline void JNTSetError(const char *description, JNTDecodingErrorType typ
         .value = value,
         .key = key,
     };
-}
-
-static void JNTHandleWentPastEndOfArray(ParsedJson::iterator *iterator) {
-    const char *description = strdup("Unkeyed container is at end.");
-    JNTSetError(description, JNTDecodingErrorTypeWentPastEndOfArray, iterator, NULL);
 }
 
 static void JNTHandleJSONParsingFailed(int res) {
@@ -260,9 +250,6 @@ static inline bool JNTCheck(ParsedJson::iterator i) {
     }
     return has;
 }
-
-// todo: what if simdjson is given "{2: "a"}"?
-// todo: clang static analyzer
 
 static __thread ParsedJson *doc = NULL;
 static __thread std::deque<ParsedJson::iterator> *tIterators;
@@ -561,33 +548,7 @@ A JNTDocumentDecode__##E(const void *value) { \
 }
 ENUMERATE(DECODE);
 
-// todo: NSNull, UInt64, Int64
-// todo: concurrent usage
-// todo: json test suites
-// todo: non- objectJSON
-// todo: throwing behavior
-// todo: disable testability for release?
-// todo: exceptions without memory leaks
-// todo: external representation for string initializer's?
 // public private visibility
-// retains on objects in collections?
-// todo: retains on UInt64s?
-// todo: what if the string is released a couple times but still retained in other places
-// todo: -Ofast?
-// todo: kParseValidateEncodingFlag, kParseNanAndInfFlag
-// todo: bridging cost of nsstring
-// todo: nonconforming floats
-// todo: class or struct types for the decoders?
-// todo: asan
-// todo: unknown reference to decoder
-// todo: json keys with utf-8 characters
-//todo: _JSONStringDictionaryDecodableMarker.Type investigation
-// todo: cases where it fails but continues like when it tries to decode data from a string probably needs to be fixed
-// todo: make sure that base64 works and does not overflow the buffer
-// todo: cindy json does not support 32-bit
-// todo: make sure architecture optimizations are turned on or else it won't run correctly
-// todo: swift seems to be fetching keys excessively
-// todo: handle empty arrays
-// todo: test when a float is attempted to be unwrapped as an int and vice versa
 // todo: simdjson stable version and not debug?
 // todo: swift 5.0?
+// disable testability on release, asan, memory leaks, tsan
