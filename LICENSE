@@ -1,7 +1,5 @@
 simdjson (simdjson.cpp, simdjson.h) is licensed under the Apache 2.0 license, see https://github.com/lemire/simdjson/blob/f668adc/LICENSE
 
-Tests were used from the swift project which is licensed under the Apache 2.0 license, see https://github.com/apple/swift/blob/7b654b372f/LICENSE.txt
-
 For all other code:
 
 Copyright (c) 2019 Michael Eisel
