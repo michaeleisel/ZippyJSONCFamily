@@ -26,9 +26,12 @@ TODO: Add long description of the pod here.
   s.author           = { 'michaeleisel' => 'michael.eisel@gmail.com' }
   s.source           = { :git => 'https://github.com/michaeleisel/ZippyJSONCFamily.git', :tag => s.version.to_s }
 
-  s.ios.deployment_target = '10.0'
-  s.osx.deployment_target = '10.12'
+  s.ios.deployment_target = '11.0'
+  s.osx.deployment_target = '10.13'
   s.library = 'c++'
+  s.pod_target_xcconfig = {
+    'CLANG_X86_VECTOR_INSTRUCTIONS' => 'avx',
+  }
 
   s.source_files = 'Sources/**/*.{h,hh,mm,m,c,cpp,swift}'
   s.public_header_files = 'Sources/**/*.h'

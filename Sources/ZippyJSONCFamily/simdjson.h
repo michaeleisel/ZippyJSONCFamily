@@ -37131,6 +37131,7 @@ template<> struct simd_input<instruction_set::neon>
 #endif
 
 #if defined(__ARM_NEON)  || (defined(_MSC_VER) && defined(_M_ARM64))
+#include <arm_neon.h>
 really_inline
 uint16_t neonmovemask(uint8x16_t input) {
   const uint8x16_t bitmask = { 0x01, 0x02, 0x4, 0x8, 0x10, 0x20, 0x40, 0x80,

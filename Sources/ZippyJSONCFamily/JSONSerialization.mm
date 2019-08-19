@@ -9,10 +9,10 @@
 #import <Foundation/Foundation.h>
 #import <stdio.h>
 #import <math.h>
-#import "libbase64.h"
 #import <string.h>
 #import <atomic>
 #import <mutex>
+#import <typeinfo>
 
 using namespace simdjson;
 
@@ -39,7 +39,7 @@ static __thread char *tPosInfString;
 static __thread char *tNegInfString;
 static __thread char *tNanString;
 
-static const char *JNTStringForType(uint8 type) {
+static const char *JNTStringForType(uint8_t type) {
     switch (type) {
         case 'n':
             return "null";
@@ -81,7 +81,7 @@ static void JNTHandleJSONParsingFailed(int res) {
     JNTSetError(description, JNTDecodingErrorTypeJSONParsingFailed, NULL, NULL);
 }
 
-static void JNTHandleWrongType(ParsedJson::iterator *iterator, uint8 type, const char *expectedType) {
+static void JNTHandleWrongType(ParsedJson::iterator *iterator, uint8_t type, const char *expectedType) {
     JNTDecodingErrorType errorType = type == 'n' ? JNTDecodingErrorTypeValueDoesNotExist : JNTDecodingErrorTypeWrongType;
     char *description = nullptr;
     asprintf(&description, "Expected %s value but found %s instead.", expectedType, JNTStringForType(type));
@@ -101,8 +101,6 @@ static void JNTHandleNumberDoesNotFit(ParsedJson::iterator *iterator, T number, 
     asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String); //, type);
     JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, iterator, NULL);
 }
-
-static const size_t kSnakeCaseBufferInitialSize = 100;
 
 static void JNTStringGrow(JNTString *string, size_t newSize) {
     string->capacity = newSize;
@@ -552,3 +550,4 @@ ENUMERATE(DECODE);
 // todo: simdjson stable version and not debug?
 // todo: swift 5.0?
 // disable testability on release, asan, memory leaks, tsan
+// todo: disable armv7 on release
