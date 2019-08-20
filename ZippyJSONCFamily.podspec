@@ -9,7 +9,7 @@
 Pod::Spec.new do |s|
   s.name             = 'ZippyJSONCFamily'
   s.version          = '0.0.1'
-  s.summary          = 'A short description of ZippyJSONCFamily.'
+  s.summary          = 'Support lib for ZippyJSON'
 
 # This description is used to generate tags and improve search results.
 #   * Think: What does it do? Why did you write it? What is the focus?
@@ -18,11 +18,10 @@ Pod::Spec.new do |s|
 #   * Finally, don't worry about the indent, CocoaPods strips it!
 
   s.description      = <<-DESC
-TODO: Add long description of the pod here.
+This is a library meant only to support ZippyJSON and provide a workaround for a Cocoapods issue. Please don't use this library directly.
                        DESC
 
   s.homepage         = 'https://github.com/michaeleisel/ZippyJSONCFamily'
-  s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { 'michaeleisel' => 'michael.eisel@gmail.com' }
   s.source           = { :git => 'https://github.com/michaeleisel/ZippyJSONCFamily.git', :tag => s.version.to_s }
 
