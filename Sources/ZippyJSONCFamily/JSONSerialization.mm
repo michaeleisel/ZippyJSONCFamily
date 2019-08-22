@@ -13,6 +13,8 @@
 #import <atomic>
 #import <mutex>
 #import <typeinfo>
+#import <deque>
+#import <dispatch/dispatch.h>
 
 using namespace simdjson;
 
@@ -135,15 +137,12 @@ static const char kEmptyDictionaryString[] = "{\"\": 0}";
 static const char kEmptyDictionaryStringLength = sizeof(kEmptyDictionaryString) - 1;
 
 const void *JNTEmptyDictionaryIterator() {
-    if (!sEmptyDictionaryJson) {
-        sEmptyDictionaryMutex.lock();
-        if (!sEmptyDictionaryJson) {
-            sEmptyDictionaryJson = new ParsedJson;
-            sEmptyDictionaryJson->allocateCapacity(kEmptyDictionaryStringLength);
-            json_parse(kEmptyDictionaryString, kEmptyDictionaryStringLength, *sEmptyDictionaryJson);
-        }
-        sEmptyDictionaryMutex.unlock();
-    }
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        sEmptyDictionaryJson = new ParsedJson;
+        sEmptyDictionaryJson->allocateCapacity(kEmptyDictionaryStringLength);
+        json_parse(kEmptyDictionaryString, kEmptyDictionaryStringLength, *sEmptyDictionaryJson);
+    });
     if (!tEmptyDictionaryIterator) {
         tEmptyDictionaryIterator = new ParsedJson::iterator(*sEmptyDictionaryJson);
         tEmptyDictionaryIterator->down();
