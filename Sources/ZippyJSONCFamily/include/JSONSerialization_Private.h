@@ -17,40 +17,49 @@ typedef CF_ENUM(size_t, JNTDecodingErrorType) {
     JNTDecodingErrorTypeWentPastEndOfArray
 };
 
+
+#ifdef __cplusplus
+typedef simdjson::ParsedJson::iterator* IteratorPointer;
+#else
+struct IteratorDummy {
+};
+typedef struct IteratorDummy *IteratorPointer;
+#endif
+
 typedef struct {
     const char *description;
     JNTDecodingErrorType type;
-    const void *value;
+    IteratorPointer value;
     const char *key;
 } JNTDecodingError;
 
-BOOL JNTDocumentContains(const void *valueAsVoid, const char *key);
-BOOL JNTDocumentDecodeNil(const void *documentPtr);
-void JNTReleaseDocument(const void *document);
-const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
-void JNTDocumentNextArrayElement(const void *iterator, bool *isAtEnd);
+BOOL JNTDocumentContains(IteratorPointer iterator, const char *key);
+BOOL JNTDocumentDecodeNil(IteratorPointer documentPtr);
+void JNTReleaseDocument();
+IteratorPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
+void JNTDocumentNextArrayElement(IteratorPointer iterator, bool *isAtEnd);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
 bool JNTAcquireThreadLock();
 void JNTReleaseThreadLock();
-bool JNTDocumentValueIsArray(const void *iteratorAsVoid);
-const void *JNTDocumentEnterStructureAndReturnCopy(const void *iteratorAsVoid);
-bool JNTDocumentValueIsDictionary(const void *iteratorAsVoid);
-NSArray <NSString *> *JNTDocumentAllKeys(const void *valueAsVoid);
-NSArray <id> *JNTDocumentCodingPath(const void *iteratorAsVoid);
-void JNTDocumentForAllKeyValuePairs(const void *iteratorAsVoid, void (^callback)(const char *key, const void *iteratorAsVoid));
-void JNTConvertSnakeToCamel(const void *iterator);
-const void *JNTEmptyDictionaryIterator();
+bool JNTDocumentValueIsArray(IteratorPointer iterator);
+IteratorPointer JNTDocumentEnterStructureAndReturnCopy(IteratorPointer iterator);
+bool JNTDocumentValueIsDictionary(IteratorPointer iterator);
+NSArray <NSString *> *JNTDocumentAllKeys(IteratorPointer iterator);
+NSArray <id> *JNTDocumentCodingPath(IteratorPointer iterator);
+void JNTDocumentForAllKeyValuePairs(IteratorPointer iterator, void (^callback)(const char *key, IteratorPointer iterator));
+void JNTConvertSnakeToCamel(IteratorPointer iterator);
+IteratorPointer JNTEmptyDictionaryIterator();
 
-const void *JNTDocumentFetchValue(const void *value, const char *key);
+IteratorPointer JNTDocumentFetchValue(IteratorPointer value, const char *key);
 
-double JNTDocumentDecode__Double(const void *value);
-float JNTDocumentDecode__Float(const void *value);
-NSDate *JNTDocumentDecode__Date(const void *value);
-void *JNTDocumentDecode__Data(const void *value, int32_t *outLength);
+double JNTDocumentDecode__Double(IteratorPointer value);
+float JNTDocumentDecode__Float(IteratorPointer value);
+NSDate *JNTDocumentDecode__Date(IteratorPointer value);
+void *JNTDocumentDecode__Data(IteratorPointer value, int32_t *outLength);
 void JNTRunTests();
-NSDecimalNumber *JNTDocumentDecode__Decimal(const void *value);
+NSDecimalNumber *JNTDocumentDecode__Decimal(IteratorPointer value);
 
-NSInteger JNTDocumentGetArrayCount(const void *value);
+NSInteger JNTDocumentGetArrayCount(IteratorPointer value);
 
 @interface JNTCodingPath : NSObject
 
@@ -66,12 +75,12 @@ JNTDecodingError *JNTError();
 #define DECODE_KEYED_HEADER(A, B, C, D) DECODE_KEYED_HEADER_NAMED(A, B, C, D, A)
 
 #define DECODE_KEYED_HEADER_NAMED(A, B, C, D, E) \
-A JNTDocumentDecodeKeyed__##E(const void *value, const char *key);
+A JNTDocumentDecodeKeyed__##E(IteratorPointer value, const char *key);
 
 #define DECODE_HEADER(A, B, C, D) DECODE_HEADER_NAMED(A, B, C, D, A)
 
 #define DECODE_HEADER_NAMED(A, B, C, D, E) \
-A JNTDocumentDecode__##E(const void *value);
+A JNTDocumentDecode__##E(IteratorPointer value);
 
 #define ENUMERATE(F) \
 F##_NAMED(bool, bool, Bool, Bool, Bool); \

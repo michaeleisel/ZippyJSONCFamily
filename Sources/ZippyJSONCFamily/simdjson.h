@@ -36764,7 +36764,7 @@ public:
     // The string we search for can contain NULL values.
     inline bool move_to_key(const char * key, uint32_t length);
     
-    inline bool search_for_key(const char * key, uint32_t length);
+    inline bool search_for_key(const char * key, size_t length);
 
     // when at a key location within an object, this moves to the accompanying value (located next to it).
     // this is equivalent but much faster than calling "next()".
@@ -36960,7 +36960,7 @@ bool ParsedJson::iterator::move_to_key(const char * key, uint32_t length) {
     return false;
 }*/
 
-bool ParsedJson::iterator::search_for_key(const char * key, uint32_t length) {
+bool ParsedJson::iterator::search_for_key(const char * key, size_t length) {
     bool hasHitEnd = false;
     uint32_t start_loc = location;
     do {

@@ -2,10 +2,10 @@
 
 // NOTE: ARC is disabled for this file
 
+#import "simdjson.h"
 #import "JSONSerialization_Private.h"
 #import "JSONSerialization.h"
 #import <CoreFoundation/CoreFoundation.h>
-#import "simdjson.h"
 #import <Foundation/Foundation.h>
 #import <stdio.h>
 #import <math.h>
@@ -17,6 +17,13 @@
 #import <dispatch/dispatch.h>
 
 using namespace simdjson;
+
+// typedef simdjson::Iterator Iterator;
+/*struct wrap {
+  Iterator *iterator;
+};*/
+
+typedef simdjson::ParsedJson::iterator Iterator;
 
 typedef struct {
     char *string;
@@ -61,11 +68,11 @@ static const char *JNTStringForType(uint8_t type) {
     return "?";
 }
 
-static inline void JNTSetError(const char *description, JNTDecodingErrorType type, ParsedJson::iterator *iterator, const char *key) {
+static inline void JNTSetError(const char *description, JNTDecodingErrorType type, Iterator *iterator, const char *key) {
     if (tError.type != JNTDecodingErrorTypeNone) {
         return;
     }
-    ParsedJson::iterator *value = iterator ? new ParsedJson::iterator(*iterator) : NULL;
+    Iterator *value = iterator ? new Iterator(*iterator) : NULL;
     if (key) {
         key = strdup(key);
     }
@@ -83,21 +90,21 @@ static void JNTHandleJSONParsingFailed(int res) {
     JNTSetError(description, JNTDecodingErrorTypeJSONParsingFailed, NULL, NULL);
 }
 
-static void JNTHandleWrongType(ParsedJson::iterator *iterator, uint8_t type, const char *expectedType) {
+static void JNTHandleWrongType(Iterator *iterator, uint8_t type, const char *expectedType) {
     JNTDecodingErrorType errorType = type == 'n' ? JNTDecodingErrorTypeValueDoesNotExist : JNTDecodingErrorTypeWrongType;
     char *description = nullptr;
     asprintf(&description, "Expected %s value but found %s instead.", expectedType, JNTStringForType(type));
     JNTSetError(description, errorType, iterator, NULL);
 }
 
-static void JNTHandleMemberDoesNotExist(ParsedJson::iterator *iterator, const char *key) {
+static void JNTHandleMemberDoesNotExist(Iterator *iterator, const char *key) {
     char *description = nullptr;
     asprintf(&description, "No value associated with %s.", key);
     JNTSetError(description, JNTDecodingErrorTypeKeyDoesNotExist, iterator, key);
 }
 
 template <typename T>
-static void JNTHandleNumberDoesNotFit(ParsedJson::iterator *iterator, T number, const char *type) {
+static void JNTHandleNumberDoesNotFit(Iterator *iterator, T number, const char *type) {
     char *description = nullptr;
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
     asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String); //, type);
@@ -131,20 +138,21 @@ JNTDecodingError *JNTError() {
 
 static std::mutex sEmptyDictionaryMutex;
 static ParsedJson *sEmptyDictionaryJson;
-static __thread ParsedJson::iterator *tEmptyDictionaryIterator;
+static __thread Iterator *tEmptyDictionaryIterator;
 // Unless the lib ever supports custom key decoding, it will never try to lookup an empty string as a key
 static const char kEmptyDictionaryString[] = "{\"\": 0}";
 static const char kEmptyDictionaryStringLength = sizeof(kEmptyDictionaryString) - 1;
 
-const void *JNTEmptyDictionaryIterator() {
+IteratorPointer JNTEmptyDictionaryIterator() {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         sEmptyDictionaryJson = new ParsedJson;
-        sEmptyDictionaryJson->allocateCapacity(kEmptyDictionaryStringLength);
+        bool success = sEmptyDictionaryJson->allocateCapacity(kEmptyDictionaryStringLength);
+        assert(success);
         json_parse(kEmptyDictionaryString, kEmptyDictionaryStringLength, *sEmptyDictionaryJson);
     });
     if (!tEmptyDictionaryIterator) {
-        tEmptyDictionaryIterator = new ParsedJson::iterator(*sEmptyDictionaryJson);
+        tEmptyDictionaryIterator = new Iterator(*sEmptyDictionaryJson);
         tEmptyDictionaryIterator->down();
     }
     return tEmptyDictionaryIterator;
@@ -187,7 +195,7 @@ static inline uint32_t JNTReplaceSnakeWithCamel(char *string) {
         }
     }
     if (!didHitUnderscore) {
-        return originalEnd - string;
+        return (uint32_t)(originalEnd - string);
     }
     output[leadingUnderscoreCount] = JNTToLower(output[leadingUnderscoreCount]); // If the first got capitalized
     for (NSInteger i = 0; i < originalEnd - end; i++) {
@@ -195,11 +203,10 @@ static inline uint32_t JNTReplaceSnakeWithCamel(char *string) {
     }
     JNTStringPush(&currOutput, '\0');
     memcpy(string, output, currOutput - output);
-    return currOutput - output - 1;
+    return (uint32_t)(currOutput - output - 1);
 }
 
-void JNTConvertSnakeToCamel(const void *iteratorAsVoid) {
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)iteratorAsVoid;
+void JNTConvertSnakeToCamel(IteratorPointer iterator) {
     do {
         if (!iterator->is_string()) {
             return;
@@ -210,53 +217,57 @@ void JNTConvertSnakeToCamel(const void *iteratorAsVoid) {
     } while (iterator->next());
 }
 
-static inline bool JNTChecker(const char *s) {
+static inline char JNTChecker(const char *s) {
     char has = '\0';
     while (*s != '\0') {
         has |= *s;
         s++;
     }
-    return (has & 0x80) != 0;
+    return has;
 }
 
-// Check if there are any non-ASCII chars in the dictionary keys
-static inline bool JNTCheck(ParsedJson::iterator i) {
-    bool has = false;
+static inline char JNTCheckHelper(Iterator& i) {
+    char has = '\0';
     if (i.is_object()) {
         if (!i.down()) {
-            return false;
+            return has;
         }
         do {
             has |= JNTChecker(i.get_string());
             i.move_to_value();
             if (i.is_object_or_array()) {
-                has |= JNTCheck(i);
+                has |= JNTCheckHelper(i);
             }
         } while (i.next());
     } else if (i.is_array()) {
         if (!i.down()) {
-            return false;
+            return has;
         }
         do {
             if (i.is_string()) {
                 has |= JNTChecker(i.get_string());
             } else if (i.is_object_or_array()) {
-                has |= JNTCheck(i);
+                has |= JNTCheckHelper(i);
             }
         } while (i.next());
     }
     return has;
 }
 
-static __thread ParsedJson *doc = NULL;
-static __thread std::deque<ParsedJson::iterator> *tIterators;
+// Check if there are any non-ASCII chars in the dictionary keys
+static inline bool JNTCheck(Iterator i) {
+    return (JNTCheckHelper(i) & 0x80) != '\0';
+}
 
-const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
-    char *bytes = (char *)data;
+static __thread ParsedJson *doc = NULL;
+static __thread std::deque<Iterator> *tIterators;
+
+IteratorPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
     doc = new ParsedJson;
     doc->full_precision_float_parsing = fullPrecisionFloatParsing;
-    doc->allocateCapacity(length); // todo: why warning?
-    tIterators = new std::deque<ParsedJson::iterator>();
+    bool success = doc->allocateCapacity(length); // 0 length?
+    assert(success);
+    tIterators = new std::deque<Iterator>();
     const int res = json_parse((const char *)data, length, *doc); // todo: handle error code
     if (res != 0) {
         if (res != NUMBER_ERROR) { // retry number errors
@@ -266,7 +277,7 @@ const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convert
         }
         return NULL;
     }
-    ParsedJson::iterator iterator = ParsedJson::iterator(*doc); // todo: is this deallocated?
+    Iterator iterator = Iterator(*doc); // todo: is this deallocated?
     if (JNTCheck(iterator)) {
         *retryReason = "One or more keys had non-ASCII characters";
         return NULL;
@@ -276,12 +287,12 @@ const void *JNTDocumentFromJSON(const void *data, NSInteger length, bool convert
     }
 }
 
-void JNTReleaseDocument(const void *document) {
+void JNTReleaseDocument() {
     if (tError.description != NULL) {
         free((void *)tError.description);
     }
     if (tError.value != NULL) {
-        delete ((ParsedJson::iterator *)tError.value);
+        delete ((Iterator *)tError.value);
     }
     if (tError.key != NULL) {
         free((void *)tError.key);
@@ -303,74 +314,70 @@ void JNTReleaseDocument(const void *document) {
 }
 // todo: all thread-locals get reset here?
 
-BOOL JNTDocumentContains(const void *valueAsVoid, const char *key) {
-    bool found = false;
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)valueAsVoid;
+BOOL JNTDocumentContains(IteratorPointer iterator, const char *key) {
     iterator->prev_string();
     return iterator->search_for_key(key, strlen(key));
 }
 
 namespace TypeChecker {
-    bool Double(ParsedJson::iterator *value) {
+    bool Double(Iterator *value) {
         return value->is_double();
     }
-    bool UInt64(ParsedJson::iterator *value) {
+    bool UInt64(Iterator *value) {
         return value->is_integer();
     }
-    bool Int64(ParsedJson::iterator *value) {
+    bool Int64(Iterator *value) {
         return value->is_integer();
     }
-    bool String(ParsedJson::iterator *value) {
+    bool String(Iterator *value) {
         return value->is_string();
     }
 
-    bool Bool(ParsedJson::iterator *value) {
+    bool Bool(Iterator *value) {
         return value->is_true() || value->is_false();
     }
 
 }
 
 namespace Converter {
-    double Double(ParsedJson::iterator *value) {
+    double Double(Iterator *value) {
         return value->get_double();
     }
-    uint64_t UInt64(ParsedJson::iterator *value) {
+    uint64_t UInt64(Iterator *value) {
         return value->get_integer();
     }
-    int64_t Int64(ParsedJson::iterator *value) {
+    int64_t Int64(Iterator *value) {
         return value->get_integer();
     }
-    const char *String(ParsedJson::iterator *value) {
+    const char *String(Iterator *value) {
         return value->get_string();
     }
-    bool Bool(ParsedJson::iterator *value) {
+    bool Bool(Iterator *value) {
         return value->is_true();
     }
 }
 
-template <typename T, typename U, bool (*TypeCheck)(ParsedJson::iterator *), U (*Convert)(ParsedJson::iterator *)>
-static inline T JNTDocumentDecode(ParsedJson::iterator *value) {
-    if (unlikely(!TypeCheck(value))) {
-        JNTHandleWrongType(value, value->get_type(), typeid(T).name());
+template <typename T, typename U, bool (*TypeCheck)(Iterator *), U (*Convert)(Iterator *)>
+static inline T JNTDocumentDecode(IteratorPointer iterator) {
+    if (unlikely(!TypeCheck(iterator))) {
+        JNTHandleWrongType(iterator, iterator->get_type(), typeid(T).name());
         return 0;
     }
-    U number = Convert(value);
+    U number = Convert(iterator);
     T result = (T)number;
     if (unlikely(number != result)) {
-        JNTHandleNumberDoesNotFit(value, number, typeid(T).name());
+        JNTHandleNumberDoesNotFit(iterator, number, typeid(T).name());
         return 0;
     }
     return result;
 }
 
-void JNTDocumentNextArrayElement(const void *iteratorAsVoid, bool *isAtEnd) {
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)iteratorAsVoid;
+void JNTDocumentNextArrayElement(IteratorPointer iterator, bool *isAtEnd) {
     *isAtEnd = !iterator->next();
 }
 
-BOOL JNTDocumentDecodeNil(const void *valueAsVoid) {
-    ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
-    return value->is_null();
+BOOL JNTDocumentDecodeNil(IteratorPointer iterator) {
+    return iterator->is_null();
 }
 
 static __thread bool tThreadLocked = false;
@@ -391,15 +398,14 @@ void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfS
     asprintf(&tNanString, "%s", nanString);
 }
 
-double JNTDocumentDecode__Double(const void *valueAsVoid) {
-    ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
-    if (TypeChecker::Double(value)) {
-        return Converter::Double(value);
-    } else if (value->is_integer()){
-        return (double)value->get_integer();
+double JNTDocumentDecode__Double(IteratorPointer iterator) {
+    if (TypeChecker::Double(iterator)) {
+        return Converter::Double(iterator);
+    } else if (iterator->is_integer()){
+        return (double)iterator->get_integer();
     } else {
-        if (value->is_string()) {
-            const char *string = value->get_string();
+        if (iterator->is_string()) {
+            const char *string = iterator->get_string();
             if (strcmp(string, tPosInfString) == 0) {
                 return INFINITY;
             } else if (strcmp(string, tNegInfString) == 0) {
@@ -408,22 +414,20 @@ double JNTDocumentDecode__Double(const void *valueAsVoid) {
                 return NAN;
             }
         }
-        JNTHandleWrongType(value, value->get_type(), "double/float");
+        JNTHandleWrongType(iterator, iterator->get_type(), "double/float");
         return 0;
     }
 }
 
-float JNTDocumentDecode__Float(const void *valueAsVoid) {
-    ParsedJson::iterator *value = (ParsedJson::iterator *)valueAsVoid;
-    double d = JNTDocumentDecode__Double(value);
-    return (float)d;
+float JNTDocumentDecode__Float(IteratorPointer iterator) {
+    return (float)JNTDocumentDecode__Double(iterator);
 }
 
-static bool JNTIteratorsEqual(ParsedJson::iterator *i1, ParsedJson::iterator *i2) {
+static bool JNTIteratorsEqual(Iterator *i1, Iterator *i2) {
     return i1->get_tape_location() == i2->get_tape_location();
 }
 
-NSMutableArray <id> *JNTDocumentCodingPathHelper(ParsedJson::iterator iterator, ParsedJson::iterator *targetIterator) {
+NSMutableArray <id> *JNTDocumentCodingPathHelper(Iterator iterator, Iterator *targetIterator) {
     if (iterator.is_array()) {
         if (iterator.down()) {
             NSInteger i = 0;
@@ -462,17 +466,15 @@ NSMutableArray <id> *JNTDocumentCodingPathHelper(ParsedJson::iterator iterator, 
     return [@[] mutableCopy];
 }
 
-NSArray <id> *JNTDocumentCodingPath(const void *iteratorAsVoid) {
-    ParsedJson::iterator *targetIterator = (ParsedJson::iterator *)iteratorAsVoid;
-    ParsedJson::iterator iterator = ParsedJson::iterator(*doc); // todo: copy constructor? deallocation of iterator?
+NSArray <id> *JNTDocumentCodingPath(IteratorPointer targetIterator) {
+    Iterator iterator = Iterator(*doc); // todo: copy constructor? deallocation of iterator?
     if (JNTIteratorsEqual(&iterator, targetIterator)) {
         return @[];
     }
     return JNTDocumentCodingPathHelper(iterator, targetIterator) ?: @[];
 }
 
-NSArray <NSString *> *JNTDocumentAllKeys(const void *valueAsVoid) {
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)valueAsVoid;
+NSArray <NSString *> *JNTDocumentAllKeys(IteratorPointer iterator) {
     if (iterator->is_object()) {
         return @[];
     }
@@ -488,12 +490,10 @@ NSArray <NSString *> *JNTDocumentAllKeys(const void *valueAsVoid) {
     return [keys copy];
 }
 
-void JNTDocumentForAllKeyValuePairs(const void *iteratorAsVoid, void (^callback)(const char *key, const void *iteratorAsVoid)) {
+void JNTDocumentForAllKeyValuePairs(IteratorPointer iteratorOriginal, void (^callback)(const char *key, IteratorPointer iterator)) {
     // Make a copy of the iterator
-    ParsedJson::iterator iterator = *((ParsedJson::iterator *)iteratorAsVoid);
-    // todo: add assertions everywhere apple does, in case the user is doing something weird
+    Iterator iterator = *(iteratorOriginal);
     if (iterator.get_scope_type() != '{') {
-        // todo: a
         return;
     }
     if (!iterator.down()) {
@@ -506,19 +506,17 @@ void JNTDocumentForAllKeyValuePairs(const void *iteratorAsVoid, void (^callback)
     } while (iterator.next());
 }
 
-const void *JNTDocumentEnterStructureAndReturnCopy(const void *iteratorAsVoid) {
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)iteratorAsVoid;
-    tIterators->emplace_back(*iterator);
+IteratorPointer JNTDocumentEnterStructureAndReturnCopy(IteratorPointer iterator) {
+    tIterators->emplace_back(*(iterator));
     if (tIterators->back().down()) {
         return &(tIterators->back());
     } else {
-        tIterators->pop_back();
+        tIterators->pop_back(); // todo: why pop_back here?
         return NULL;
     }
 }
 
-__attribute__((always_inline)) const void *JNTDocumentFetchValue(const void *valueAsVoid, const char *key) {
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)valueAsVoid;
+__attribute__((always_inline)) IteratorPointer JNTDocumentFetchValue(IteratorPointer iterator, const char *key) {
     iterator->prev_string();
     if (!iterator->search_for_key(key, strlen(key))) {
         JNTHandleMemberDoesNotExist(iterator, key);
@@ -527,21 +525,19 @@ __attribute__((always_inline)) const void *JNTDocumentFetchValue(const void *val
 }
 // todo: case where iterator starts searching at end of scope, ie '}'
 
-bool JNTDocumentValueIsDictionary(const void *iteratorAsVoid) {
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)iteratorAsVoid;
+bool JNTDocumentValueIsDictionary(IteratorPointer iterator) {
     return iterator->is_object();
 }
 
-bool JNTDocumentValueIsArray(const void *iteratorAsVoid) {
-    ParsedJson::iterator *iterator = (ParsedJson::iterator *)iteratorAsVoid;
+bool JNTDocumentValueIsArray(IteratorPointer iterator) {
     return iterator->is_array();
 }
 
 #define DECODE(A, B, C, D) DECODE_NAMED(A, B, C, D, A)
 
 #define DECODE_NAMED(A, B, C, D, E) \
-A JNTDocumentDecode__##E(const void *value) { \
-    return JNTDocumentDecode<A, B, TypeChecker::C, Converter::D>((ParsedJson::iterator *)value); \
+A JNTDocumentDecode__##E(IteratorPointer iterator) { \
+    return JNTDocumentDecode<A, B, TypeChecker::C, Converter::D>(iterator); \
 }
 ENUMERATE(DECODE);
 
