@@ -1,3 +1,5 @@
+struct JNTDecoder;
+
 #define JSON_TEST_NUMBERS
 /* auto-generated on Tue Jul 30 21:03:17 EDT 2019. Do not edit! */
 /* begin file include/simdjson/simdjson_version.h */
@@ -36812,7 +36814,6 @@ public:
     typedef struct {size_t start_of_scope; uint8_t scope_type;} scopeindex_t;
 
 private:
-
     iterator& operator=(const iterator& other) = delete ;
 
     ParsedJson &pj;

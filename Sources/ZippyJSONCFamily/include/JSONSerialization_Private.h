@@ -19,47 +19,48 @@ typedef CF_ENUM(size_t, JNTDecodingErrorType) {
 
 
 #ifdef __cplusplus
-typedef simdjson::ParsedJson::iterator* IteratorPointer;
+struct JNTDecoder;
+typedef JNTDecoder *DecoderPointer;
 #else
-struct IteratorDummy {
+struct DecoderDummy {
 };
-typedef struct IteratorDummy *IteratorPointer;
+typedef struct DecoderDummy *DecoderPointer;
 #endif
 
 typedef struct {
     const char *description;
     JNTDecodingErrorType type;
-    IteratorPointer value;
+    DecoderPointer value;
     const char *key;
 } JNTDecodingError;
 
-BOOL JNTDocumentContains(IteratorPointer iterator, const char *key);
-BOOL JNTDocumentDecodeNil(IteratorPointer documentPtr);
+BOOL JNTDocumentContains(DecoderPointer iterator, const char *key);
+BOOL JNTDocumentDecodeNil(DecoderPointer documentPtr);
 void JNTReleaseDocument();
-IteratorPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
-void JNTDocumentNextArrayElement(IteratorPointer iterator, bool *isAtEnd);
+DecoderPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
+void JNTDocumentNextArrayElement(DecoderPointer iterator, bool *isAtEnd);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
 bool JNTAcquireThreadLock();
 void JNTReleaseThreadLock();
-bool JNTDocumentValueIsArray(IteratorPointer iterator);
-IteratorPointer JNTDocumentEnterStructureAndReturnCopy(IteratorPointer iterator);
-bool JNTDocumentValueIsDictionary(IteratorPointer iterator);
-NSArray <NSString *> *JNTDocumentAllKeys(IteratorPointer iterator);
-NSArray <id> *JNTDocumentCodingPath(IteratorPointer iterator);
-void JNTDocumentForAllKeyValuePairs(IteratorPointer iterator, void (^callback)(const char *key, IteratorPointer iterator));
-void JNTConvertSnakeToCamel(IteratorPointer iterator);
-IteratorPointer JNTEmptyDictionaryIterator();
+bool JNTDocumentValueIsArray(DecoderPointer iterator);
+DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer iterator);
+bool JNTDocumentValueIsDictionary(DecoderPointer iterator);
+NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer iterator);
+NSArray <id> *JNTDocumentCodingPath(DecoderPointer iterator);
+void JNTDocumentForAllKeyValuePairs(DecoderPointer iterator, void (^callback)(const char *key, DecoderPointer iterator));
+void JNTConvertSnakeToCamel(DecoderPointer iterator);
+DecoderPointer JNTEmptyDictionaryIterator();
 
-IteratorPointer JNTDocumentFetchValue(IteratorPointer value, const char *key);
+DecoderPointer JNTDocumentFetchValue(DecoderPointer value, const char *key);
 
-double JNTDocumentDecode__Double(IteratorPointer value);
-float JNTDocumentDecode__Float(IteratorPointer value);
-NSDate *JNTDocumentDecode__Date(IteratorPointer value);
-void *JNTDocumentDecode__Data(IteratorPointer value, int32_t *outLength);
+double JNTDocumentDecode__Double(DecoderPointer value);
+float JNTDocumentDecode__Float(DecoderPointer value);
+NSDate *JNTDocumentDecode__Date(DecoderPointer value);
+void *JNTDocumentDecode__Data(DecoderPointer value, int32_t *outLength);
 void JNTRunTests();
-NSDecimalNumber *JNTDocumentDecode__Decimal(IteratorPointer value);
+NSDecimalNumber *JNTDocumentDecode__Decimal(DecoderPointer value);
 
-NSInteger JNTDocumentGetArrayCount(IteratorPointer value);
+NSInteger JNTDocumentGetArrayCount(DecoderPointer value);
 
 @interface JNTCodingPath : NSObject
 
@@ -75,12 +76,12 @@ JNTDecodingError *JNTError();
 #define DECODE_KEYED_HEADER(A, B, C, D) DECODE_KEYED_HEADER_NAMED(A, B, C, D, A)
 
 #define DECODE_KEYED_HEADER_NAMED(A, B, C, D, E) \
-A JNTDocumentDecodeKeyed__##E(IteratorPointer value, const char *key);
+A JNTDocumentDecodeKeyed__##E(DecoderPointer value, const char *key);
 
 #define DECODE_HEADER(A, B, C, D) DECODE_HEADER_NAMED(A, B, C, D, A)
 
 #define DECODE_HEADER_NAMED(A, B, C, D, E) \
-A JNTDocumentDecode__##E(IteratorPointer value);
+A JNTDocumentDecode__##E(DecoderPointer value);
 
 #define ENUMERATE(F) \
 F##_NAMED(bool, bool, Bool, Bool, Bool); \
