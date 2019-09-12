@@ -183,6 +183,7 @@ JNTDecodingError *JNTError() {
 }
 
 static inline uint32_t JNTReplaceSnakeWithCamel(std::string &buffer, char *string) {
+    buffer.clear();
     char *end = string + strlen(string);
     char *currString = string;
     buffer.reserve(end - string + 1);
@@ -225,7 +226,6 @@ static inline uint32_t JNTReplaceSnakeWithCamel(std::string &buffer, char *strin
     }
     memcpy(string, buffer.c_str(), buffer.size() + 1);
     uint32_t size = (uint32_t)buffer.size();
-    buffer.clear();
     return size;
 }
 
@@ -527,7 +527,7 @@ DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder) {
 __attribute__((always_inline)) DecoderPointer JNTDocumentFetchValue(DecoderPointer decoder, const char *key) {
     decoder->iterator.prev_string();
     if (!decoder->iterator.search_for_key(key, strlen(key))) {
-        //JNTHandleMemberDoesNotExist(decoder->iterator, key);
+        //JNTHandleMemberDoesNotExist(decoder->iterator, key); // todo: ?
     }
     return decoder;
 }
