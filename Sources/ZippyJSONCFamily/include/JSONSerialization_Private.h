@@ -19,6 +19,15 @@ typedef CF_ENUM(size_t, JNTDecodingErrorType) {
 
 
 #ifdef __cplusplus
+struct JNTContext;
+typedef JNTContext *ContextPointer;
+#else
+struct ContextDummy {
+};
+typedef struct ContextDummy *ContextPointer;
+#endif
+
+#ifdef __cplusplus
 struct JNTDecoder;
 typedef JNTDecoder *DecoderPointer;
 #else
@@ -27,17 +36,14 @@ struct DecoderDummy {
 typedef struct DecoderDummy *DecoderPointer;
 #endif
 
-typedef struct {
-    const char *description;
-    JNTDecodingErrorType type;
-    DecoderPointer value;
-    const char *key;
-} JNTDecodingError;
-
+ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString);
+DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
 BOOL JNTDocumentContains(DecoderPointer iterator, const char *key);
+void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, DecoderPointer value, const char *key));
+bool JNTErrorDidOccur(ContextPointer context);
 BOOL JNTDocumentDecodeNil(DecoderPointer documentPtr);
 void JNTReleaseDocument();
-DecoderPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
+DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
 void JNTDocumentNextArrayElement(DecoderPointer iterator, bool *isAtEnd);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
 bool JNTAcquireThreadLock();
@@ -49,7 +55,7 @@ NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer iterator);
 NSArray <id> *JNTDocumentCodingPath(DecoderPointer iterator);
 void JNTDocumentForAllKeyValuePairs(DecoderPointer iterator, void (^callback)(const char *key, DecoderPointer iterator));
 void JNTConvertSnakeToCamel(DecoderPointer iterator);
-DecoderPointer JNTEmptyDictionaryIterator();
+DecoderPointer JNTEmptyDictionaryDecoder(DecoderPointer decoder);
 
 DecoderPointer JNTDocumentFetchValue(DecoderPointer value, const char *key);
 
@@ -70,8 +76,6 @@ NSInteger JNTDocumentGetArrayCount(DecoderPointer value);
 @property (nonatomic) NSInteger intValue;
 
 @end
-
-JNTDecodingError *JNTError();
 
 #define DECODE_KEYED_HEADER(A, B, C, D) DECODE_KEYED_HEADER_NAMED(A, B, C, D, A)
 

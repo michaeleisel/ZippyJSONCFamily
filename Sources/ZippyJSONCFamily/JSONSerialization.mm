@@ -23,20 +23,10 @@ using namespace simdjson;
   Iterator *iterator;
 };*/
 
-typedef struct {
-    char *string;
-    size_t capacity;
-} JNTString;
-
 static inline char JNTStringPop(char **string) {
     char c = **string;
     (*string)++;
     return c;
-}
-
-static inline void JNTStringPush(char **string, char c) {
-    **string = c;
-    (*string)++;
 }
 
 typedef simdjson::ParsedJson::iterator Iterator;
@@ -45,47 +35,75 @@ typedef simdjson::ParsedJson::iterator Iterator;
 static const char kEmptyDictionaryString[] = "{\"\": 0}";
 static const char kEmptyDictionaryStringLength = sizeof(kEmptyDictionaryString) - 1;
 
-Iterator JNTCreateEmptyDictionaryIterator() {
-    ParsedJson emptyDictionaryJson;
-    bool success = emptyDictionaryJson.allocateCapacity(kEmptyDictionaryStringLength);
-    assert(success);
-    json_parse(kEmptyDictionaryString, kEmptyDictionaryStringLength, emptyDictionaryJson);
-    Iterator emptyDictionaryIterator = Iterator(emptyDictionaryJson);
-    emptyDictionaryIterator.down();
-    return emptyDictionaryIterator;
-}
-
 struct JNTContext;
 
 struct JNTDecoder {
-public:
     Iterator iterator;
-    JNTContext &context;
-    JNTDecoder(Iterator iterator, JNTContext &context) : iterator(iterator), context(context) {
+    JNTContext *context;
+    JNTDecoder(Iterator iterator, JNTContext *context) : iterator(iterator), context(context) {
     }
-private:
-    JNTDecoder();
+    /*JNTDecoder& operator=(JNTDecoder other) {
+        iterator = other.iterator;
+        context = other.context;
+    }*/
 };
+
+struct JNTDecodingError {
+    std::string description = "";
+    JNTDecodingErrorType type = JNTDecodingErrorTypeNone;
+    DecoderPointer value = NULL;
+    std::string key = "";
+    JNTDecodingError() {
+    }
+    JNTDecodingError(std::string description, JNTDecodingErrorType type, DecoderPointer value, std::string key) : description(description), type(type), value(value), key(key) {
+    }
+};
+
+Iterator JNTSetupEmptyDictionary(ParsedJson &parser);
 
 struct JNTContext { // static for classes?
 public:
     ParsedJson parser;
     std::deque<JNTDecoder> decoders;
-    Iterator emptyDictionaryIterator;
+    ParsedJson emptyDictionaryParser;
+    JNTDecoder emptyDictionaryDecoder;
     JNTDecodingError error;
-    JNTString snakeCaseBuffer;
+    std::string snakeCaseBuffer;
 
-    char *posInfString;
-    char *negInfString;
-    char *nanString;
+    std::string posInfString;
+    std::string negInfString;
+    std::string nanString;
 
-    JNTContext() : emptyDictionaryIterator(JNTCreateEmptyDictionaryIterator()) {
+    JNTContext(std::string posInfString, std::string negInfString, std::string nanString) : emptyDictionaryParser(ParsedJson()), emptyDictionaryDecoder(JNTDecoder(JNTSetupEmptyDictionary(emptyDictionaryParser), this)), posInfString(posInfString), negInfString(negInfString), nanString(nanString) {
+        Iterator iterator = JNTSetupEmptyDictionary(emptyDictionaryParser);
     }
-private:
-    // JNTContext();
 };
 
+// todo: all three floating point strings?
+
+bool JNTErrorDidOccur(ContextPointer context) {
+    return context->error.type != JNTDecodingErrorTypeNone;
+}
+
+void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, DecoderPointer value, const char *key)) {
+    JNTDecodingError &error = context->error;
+    block(error.description.c_str(), error.type, error.value, error.key.c_str());
+}
+
+Iterator JNTSetupEmptyDictionary(ParsedJson &parser) {
+    bool success = parser.allocateCapacity(kEmptyDictionaryStringLength);
+    assert(success);
+    json_parse(kEmptyDictionaryString, kEmptyDictionaryStringLength, parser);
+    Iterator emptyDictionaryIterator = Iterator(parser);
+    emptyDictionaryIterator.down();
+    return emptyDictionaryIterator;
+}
+
 typedef JNTDecoder *DecoderPointer;
+
+DecoderPointer JNTEmptyDictionaryDecoder(DecoderPointer decoder) {
+    return &(decoder->context->emptyDictionaryDecoder);
+}
 
 static const char *JNTStringForType(uint8_t type) {
     switch (type) {
@@ -107,33 +125,26 @@ static const char *JNTStringForType(uint8_t type) {
     return "?";
 }
 
-static inline void JNTSetError(const char *description, JNTDecodingErrorType type, JNTDecoder *decoder, const char *key) {
-    if (decoder->context.error.type != JNTDecodingErrorTypeNone) {
+// todo: dealloc of float error strs?
+static inline void JNTSetError(std::string description, JNTDecodingErrorType type, JNTDecoder *decoder, std::string key) {
+    if (decoder->context->error.type != JNTDecodingErrorTypeNone) {
         return;
     }
     JNTDecoder *value = decoder ? new JNTDecoder(*decoder) : NULL;
-    if (key) {
-        key = strdup(key);
-    }
-    decoder->context.error = {
-        .description = description,
-        .type = type,
-        .value = value,
-        .key = key,
-    };
+    decoder->context->error = JNTDecodingError(description, type, value, key);
 }
 
 static void JNTHandleJSONParsingFailed(int res) {
-    char *description = nullptr;
-    asprintf(&description, "The given data was not valid JSON. Error: %s", simdjson::errorMsg(res).c_str());
-    JNTSetError(description, JNTDecodingErrorTypeJSONParsingFailed, NULL, NULL);
+    std::ostringstream oss;
+    oss << "The given data was not valid JSON. Error: " << simdjson::errorMsg(res);
+    JNTSetError(oss.str(), JNTDecodingErrorTypeJSONParsingFailed, NULL, NULL); // todo: NULL for std::string?
 }
 
 static void JNTHandleWrongType(JNTDecoder *decoder, uint8_t type, const char *expectedType) {
     JNTDecodingErrorType errorType = type == 'n' ? JNTDecodingErrorTypeValueDoesNotExist : JNTDecodingErrorTypeWrongType;
-    char *description = nullptr;
-    asprintf(&description, "Expected %s value but found %s instead.", expectedType, JNTStringForType(type));
-    JNTSetError(description, errorType, decoder, NULL);
+    std::ostringstream oss;
+    oss << "Expected " << expectedType << "but found " << JNTStringForType(type) << "instead.";
+    JNTSetError(oss.str(), errorType, decoder, "");
 }
 
 static void JNTHandleMemberDoesNotExist(JNTDecoder *decoder, const char *key) {
@@ -148,11 +159,6 @@ static void JNTHandleNumberDoesNotFit(JNTDecoder *decoder, T number, const char 
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
     asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String); //, type);
     JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, decoder, NULL);
-}
-
-static void JNTStringGrow(JNTString *string, size_t newSize) {
-    string->capacity = newSize;
-    string->string = (char *)realloc((void *)string->string, newSize);
 }
 
 static inline bool JNTIsLower(char c) {
@@ -176,21 +182,19 @@ JNTDecodingError *JNTError() {
     return NULL;
 }
 
-static inline uint32_t JNTReplaceSnakeWithCamel(char *string) {
+static inline uint32_t JNTReplaceSnakeWithCamel(std::string &buffer, char *string) {
     char *end = string + strlen(string);
     char *currString = string;
-    JNTStringGrow(&tSnakeCaseBuffer, end - string + 1);
-    char *output = tSnakeCaseBuffer.string;
-    char *currOutput = output;
+    buffer.reserve(end - string + 1);
     while (currString < end) {
         if (*currString != '_') {
             break;
         }
-        JNTStringPush(&currOutput, '_');
+        buffer.push_back('_');
         currString++;
     }
     if (currString == end) {
-        return end - string;
+        return (uint32_t)(end - string);
     }
     char *originalEnd = end;
     end--;
@@ -202,10 +206,10 @@ static inline uint32_t JNTReplaceSnakeWithCamel(char *string) {
     size_t leadingUnderscoreCount = currString - string;
     while (currString < end) {
         char first = JNTStringPop(&currString);
-        JNTStringPush(&currOutput, JNTToUpper(first));
+        buffer.push_back(JNTToUpper(first));
         while (currString < end && *currString != '_') {
             char c = JNTStringPop(&currString);
-            JNTStringPush(&currOutput, JNTToLower(c));
+            buffer.push_back(JNTToLower(c));
         }
         while (currString < end && *currString == '_') {
             didHitUnderscore = true;
@@ -215,13 +219,14 @@ static inline uint32_t JNTReplaceSnakeWithCamel(char *string) {
     if (!didHitUnderscore) {
         return (uint32_t)(originalEnd - string);
     }
-    output[leadingUnderscoreCount] = JNTToLower(output[leadingUnderscoreCount]); // If the first got capitalized
+    buffer[leadingUnderscoreCount] = JNTToLower(buffer[leadingUnderscoreCount]); // If the first got capitalized
     for (NSInteger i = 0; i < originalEnd - end; i++) {
-        JNTStringPush(&currOutput, '_');
+        buffer.push_back('_');
     }
-    JNTStringPush(&currOutput, '\0');
-    memcpy(string, output, currOutput - output);
-    return (uint32_t)(currOutput - output - 1);
+    memcpy(string, buffer.c_str(), buffer.size() + 1);
+    uint32_t size = (uint32_t)buffer.size();
+    buffer.clear();
+    return size;
 }
 
 void JNTConvertSnakeToCamel(DecoderPointer decoder) {
@@ -229,7 +234,7 @@ void JNTConvertSnakeToCamel(DecoderPointer decoder) {
         if (!decoder->iterator.is_string()) {
             return;
         }
-        uint32_t newLength = JNTReplaceSnakeWithCamel((char *)decoder->iterator.get_string());
+        uint32_t newLength = JNTReplaceSnakeWithCamel(decoder->context->snakeCaseBuffer, (char *)decoder->iterator.get_string());
         decoder->iterator.set_string_length(newLength);
         decoder->iterator.move_to_value();
     } while (decoder->iterator.next());
@@ -279,8 +284,11 @@ static inline bool JNTCheck(Iterator i) {
 
 // struct JNTDecoder;
 
-DecoderPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
-    JNTContext *context = new JNTContext();
+ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString) {
+    return new JNTContext(std::string(posInfString), std::string(negInfString), std::string(nanString));
+}
+
+DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
     context->parser.full_precision_float_parsing = fullPrecisionFloatParsing;
     bool success = context->parser.allocateCapacity(length); // todo: 0 length?
     assert(success);
@@ -294,7 +302,7 @@ DecoderPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool conv
         return NULL;
     }
     Iterator iterator = Iterator(context->parser); // todo: remove conflict with swift Iterator and this one
-    JNTDecoder decoder = JNTDecoder(iterator, *context);
+    JNTDecoder decoder = JNTDecoder(iterator, context);
     if (JNTCheck(iterator)) {
         *retryReason = "One or more keys had non-ASCII characters";
         return NULL;
@@ -305,7 +313,7 @@ DecoderPointer JNTDocumentFromJSON(const void *data, NSInteger length, bool conv
 }
 
 void JNTReleaseDocument() {
-    if (tError.description != NULL) {
+    /*if (tError.description != NULL) {
         free((void *)tError.description);
     }
     if (tError.value != NULL) {
@@ -321,7 +329,7 @@ void JNTReleaseDocument() {
         free(tNanString);
         tPosInfString = tNegInfString = tNanString = NULL;
     }
-    // memset(tPreviousLocation, 0, sizeof(tPreviousLocation));
+    // memset(tPreviousLocation, 0, sizeof(tPreviousLocation));*/
 }
 
 BOOL JNTDocumentContains(DecoderPointer decoder, const char *key) {
@@ -371,13 +379,13 @@ template <typename T, typename U, bool (*TypeCheck)(Iterator *), U (*Convert)(It
 static inline T JNTDocumentDecode(DecoderPointer decoder) {
     Iterator *iterator = &decoder->iterator;
     if (unlikely(!TypeCheck(iterator))) {
-        JNTHandleWrongType(iterator, decoder->iterator.get_type(), typeid(T).name());
+        JNTHandleWrongType(decoder, decoder->iterator.get_type(), typeid(T).name());
         return 0;
     }
     U number = Convert(iterator);
     T result = (T)number;
     if (unlikely(number != result)) {
-        JNTHandleNumberDoesNotFit(iterator, number, typeid(T).name());
+        JNTHandleNumberDoesNotFit(decoder, number, typeid(T).name());
         return 0;
     }
     return result;
@@ -391,23 +399,11 @@ BOOL JNTDocumentDecodeNil(DecoderPointer decoder) {
     return decoder->iterator.is_null();
 }
 
-static __thread bool tThreadLocked = false;
-
-bool JNTAcquireThreadLock() {
-    bool threadWasLocked = tThreadLocked;
-    tThreadLocked = true;
-    return !threadWasLocked;
-}
-
-void JNTReleaseThreadLock() {
-    tThreadLocked = false;
-}
-
-void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString) {
+/*void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString) {
     asprintf(&tPosInfString, "%s", posInfString);
     asprintf(&tNegInfString, "%s", negInfString);
     asprintf(&tNanString, "%s", nanString);
-}
+}*/
 
 double JNTDocumentDecode__Double(DecoderPointer decoder) {
     if (TypeChecker::Double(&decoder->iterator)) {
@@ -417,15 +413,15 @@ double JNTDocumentDecode__Double(DecoderPointer decoder) {
     } else {
         if (decoder->iterator.is_string()) {
             const char *string = decoder->iterator.get_string();
-            if (strcmp(string, tPosInfString) == 0) {
+            if (strcmp(string, decoder->context->posInfString.c_str()) == 0) {
                 return INFINITY;
-            } else if (strcmp(string, tNegInfString) == 0) {
+            } else if (strcmp(string, decoder->context->negInfString.c_str()) == 0) {
                 return -INFINITY;
-            } else if (strcmp(string, tNanString) == 0) {
+            } else if (strcmp(string, decoder->context->negInfString.c_str()) == 0) {
                 return NAN;
             }
         }
-        JNTHandleWrongType(&decoder->iterator, decoder->iterator.get_type(), "double/float");
+        JNTHandleWrongType(decoder, decoder->iterator.get_type(), "double/float");
         return 0;
     }
 }
@@ -478,7 +474,7 @@ NSMutableArray <id> *JNTDocumentCodingPathHelper(Iterator iterator, Iterator *ta
 }
 
 NSArray <id> *JNTDocumentCodingPath(DecoderPointer targetDecoder) {
-    Iterator iterator = Iterator(targetDecoder->context.parser);
+    Iterator iterator = Iterator(targetDecoder->context->parser);
     if (JNTIteratorsEqual(&iterator, &targetDecoder->iterator)) {
         return @[];
     }
@@ -519,11 +515,11 @@ void JNTDocumentForAllKeyValuePairs(DecoderPointer decoderOriginal, void (^callb
 }
 
 DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder) {
-    decoder->context.decoders.emplace_back(decoder);
-    if (decoder->context.decoders.back().iterator.down()) {
-        return &(decoder->context.decoders.back());
+    decoder->context->decoders.emplace_back(*decoder);
+    if (decoder->context->decoders.back().iterator.down()) {
+        return &(decoder->context->decoders.back());
     } else {
-        decoder->context.decoders.pop_back();
+        decoder->context->decoders.pop_back();
         return NULL;
     }
 }
@@ -543,6 +539,8 @@ bool JNTDocumentValueIsDictionary(DecoderPointer decoder) {
 bool JNTDocumentValueIsArray(DecoderPointer decoder) {
     return decoder->iterator.is_array();
 }
+
+// todo: test with auto-converting of snake case, for a large json file like twitter
 
 #define DECODE(A, B, C, D) DECODE_NAMED(A, B, C, D, A)
 
