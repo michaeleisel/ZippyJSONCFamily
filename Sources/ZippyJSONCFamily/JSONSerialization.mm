@@ -18,11 +18,6 @@
 
 using namespace simdjson;
 
-// typedef simdjson::Iterator Iterator;
-/*struct wrap {
-  Iterator *iterator;
-};*/
-
 static inline char JNTStringPop(char **string) {
     char c = **string;
     (*string)++;
@@ -42,10 +37,6 @@ struct JNTDecoder {
     JNTContext *context;
     JNTDecoder(Iterator iterator, JNTContext *context) : iterator(iterator), context(context) {
     }
-    /*JNTDecoder& operator=(JNTDecoder other) {
-        iterator = other.iterator;
-        context = other.context;
-    }*/
 };
 
 struct JNTDecodingError {
@@ -78,8 +69,6 @@ public:
         Iterator iterator = JNTSetupEmptyDictionary(emptyDictionaryParser);
     }
 };
-
-// todo: all three floating point strings?
 
 bool JNTErrorDidOccur(ContextPointer context) {
     return context->error.type != JNTDecodingErrorTypeNone;
@@ -125,32 +114,31 @@ static const char *JNTStringForType(uint8_t type) {
     return "?";
 }
 
-// todo: dealloc of float error strs?
-static inline void JNTSetError(std::string description, JNTDecodingErrorType type, JNTDecoder *decoder, std::string key) {
-    if (decoder->context->error.type != JNTDecodingErrorTypeNone) {
+static inline void JNTSetError(std::string description, JNTDecodingErrorType type, JNTContext *context, JNTDecoder *decoder, std::string key) {
+    if (context->error.type != JNTDecodingErrorTypeNone) {
         return;
     }
     JNTDecoder *value = decoder ? new JNTDecoder(*decoder) : NULL;
-    decoder->context->error = JNTDecodingError(description, type, value, key);
+    context->error = JNTDecodingError(description, type, value, key);
 }
 
-static void JNTHandleJSONParsingFailed(int res) {
+static void JNTHandleJSONParsingFailed(int res, JNTContext *context) {
     std::ostringstream oss;
     oss << "The given data was not valid JSON. Error: " << simdjson::errorMsg(res);
-    JNTSetError(oss.str(), JNTDecodingErrorTypeJSONParsingFailed, NULL, NULL); // todo: NULL for std::string?
+    JNTSetError(oss.str(), JNTDecodingErrorTypeJSONParsingFailed, context, NULL, "");
 }
 
 static void JNTHandleWrongType(JNTDecoder *decoder, uint8_t type, const char *expectedType) {
     JNTDecodingErrorType errorType = type == 'n' ? JNTDecodingErrorTypeValueDoesNotExist : JNTDecodingErrorTypeWrongType;
     std::ostringstream oss;
-    oss << "Expected " << expectedType << "but found " << JNTStringForType(type) << "instead.";
-    JNTSetError(oss.str(), errorType, decoder, "");
+    oss << "Expected " << expectedType << " but found " << JNTStringForType(type) << " instead.";
+    JNTSetError(oss.str(), errorType, decoder->context, decoder, "");
 }
 
 static void JNTHandleMemberDoesNotExist(JNTDecoder *decoder, const char *key) {
-    char *description = nullptr;
-    asprintf(&description, "No value associated with %s.", key);
-    JNTSetError(description, JNTDecodingErrorTypeKeyDoesNotExist, decoder, key);
+    std::ostringstream oss;
+    oss << "No value associated with " << key << ".";
+    JNTSetError(oss.str(), JNTDecodingErrorTypeKeyDoesNotExist, decoder->context, decoder, key);
 }
 
 template <typename T>
@@ -158,7 +146,7 @@ static void JNTHandleNumberDoesNotFit(JNTDecoder *decoder, T number, const char 
     char *description = nullptr;
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
     asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String); //, type);
-    JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, decoder, NULL);
+    JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, decoder->context, decoder, "");
 }
 
 static inline bool JNTIsLower(char c) {
@@ -177,16 +165,10 @@ static inline char JNTToLower(char c) {
     return JNTIsUpper(c) ? c + ('a' - 'A') : c;
 }
 
-JNTDecodingError *JNTError() {
-    abort();
-    return NULL;
-}
-
 static inline uint32_t JNTReplaceSnakeWithCamel(std::string &buffer, char *string) {
-    buffer.clear();
+    buffer.erase();
     char *end = string + strlen(string);
     char *currString = string;
-    buffer.reserve(end - string + 1);
     while (currString < end) {
         if (*currString != '_') {
             break;
@@ -282,8 +264,6 @@ static inline bool JNTCheck(Iterator i) {
     return (JNTCheckHelper(i) & 0x80) != '\0';
 }
 
-// struct JNTDecoder;
-
 ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString) {
     return new JNTContext(std::string(posInfString), std::string(negInfString), std::string(nanString));
 }
@@ -295,7 +275,7 @@ DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSI
     const int res = json_parse((const char *)data, length, context->parser);
     if (res != 0) {
         if (res != NUMBER_ERROR) { // retry number errors
-            JNTHandleJSONParsingFailed(res);
+            JNTHandleJSONParsingFailed(res, context);
         } else {
             *retryReason = "A number was too large (couldn't fit in a 64-bit signed integer)";
         }
@@ -312,24 +292,8 @@ DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSI
     }
 }
 
-void JNTReleaseDocument() {
-    /*if (tError.description != NULL) {
-        free((void *)tError.description);
-    }
-    if (tError.value != NULL) {
-        delete ((Iterator *)tError.value);
-    }
-    if (tError.key != NULL) {
-        free((void *)tError.key);
-    }
-    tError = {0};
-    if (tPosInfString) {
-        free(tPosInfString);
-        free(tNegInfString);
-        free(tNanString);
-        tPosInfString = tNegInfString = tNanString = NULL;
-    }
-    // memset(tPreviousLocation, 0, sizeof(tPreviousLocation));*/
+void JNTReleaseContext(JNTContext *context) {
+    delete context;
 }
 
 BOOL JNTDocumentContains(DecoderPointer decoder, const char *key) {
@@ -350,11 +314,9 @@ namespace TypeChecker {
     bool String(Iterator *value) {
         return value->is_string();
     }
-
     bool Bool(Iterator *value) {
         return value->is_true() || value->is_false();
     }
-
 }
 
 namespace Converter {
@@ -399,12 +361,6 @@ BOOL JNTDocumentDecodeNil(DecoderPointer decoder) {
     return decoder->iterator.is_null();
 }
 
-/*void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString) {
-    asprintf(&tPosInfString, "%s", posInfString);
-    asprintf(&tNegInfString, "%s", negInfString);
-    asprintf(&tNanString, "%s", nanString);
-}*/
-
 double JNTDocumentDecode__Double(DecoderPointer decoder) {
     if (TypeChecker::Double(&decoder->iterator)) {
         return Converter::Double(&decoder->iterator);
@@ -417,7 +373,7 @@ double JNTDocumentDecode__Double(DecoderPointer decoder) {
                 return INFINITY;
             } else if (strcmp(string, decoder->context->negInfString.c_str()) == 0) {
                 return -INFINITY;
-            } else if (strcmp(string, decoder->context->negInfString.c_str()) == 0) {
+            } else if (strcmp(string, decoder->context->nanString.c_str()) == 0) {
                 return NAN;
             }
         }
@@ -527,7 +483,7 @@ DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder) {
 __attribute__((always_inline)) DecoderPointer JNTDocumentFetchValue(DecoderPointer decoder, const char *key) {
     decoder->iterator.prev_string();
     if (!decoder->iterator.search_for_key(key, strlen(key))) {
-        //JNTHandleMemberDoesNotExist(decoder->iterator, key); // todo: ?
+        JNTHandleMemberDoesNotExist(decoder, key);
     }
     return decoder;
 }
