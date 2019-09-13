@@ -270,7 +270,8 @@ ContextPointer JNTCreateContext(const char *negInfString, const char *posInfStri
 
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
     context->parser.full_precision_float_parsing = fullPrecisionFloatParsing;
-    bool success = context->parser.allocateCapacity(length); // todo: 0 length?
+    NSInteger capacity = length ?: 1;
+    bool success = context->parser.allocateCapacity(capacity);
     assert(success);
     const int res = json_parse((const char *)data, length, context->parser);
     if (res != 0) {
