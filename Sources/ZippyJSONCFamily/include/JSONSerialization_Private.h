@@ -40,7 +40,9 @@ ContextPointer JNTCreateContext(const char *negInfString, const char *posInfStri
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
 BOOL JNTDocumentContains(DecoderPointer iterator, const char *key);
 void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, DecoderPointer value, const char *key));
+ContextPointer JNTContextFromDecoder(DecoderPointer decoder);
 bool JNTErrorDidOccur(ContextPointer context);
+void JNTClearError(ContextPointer context);
 BOOL JNTDocumentDecodeNil(DecoderPointer documentPtr);
 void JNTReleaseContext(ContextPointer context);
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
