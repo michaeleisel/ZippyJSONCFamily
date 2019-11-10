@@ -26,6 +26,14 @@ static inline char JNTStringPop(char **string) {
 
 typedef simdjson::ParsedJson::iterator Iterator;
 
+BOOL JNTHasVectorExtensions() {
+#ifdef __SSE4_2__
+  return true;
+#else
+  return false;
+#endif
+}
+
 // Unless the lib ever supports custom key decoding, it will never try to lookup an empty string as a key
 static const char kEmptyDictionaryString[] = "{\"\": 0}";
 static const char kEmptyDictionaryStringLength = sizeof(kEmptyDictionaryString) - 1;

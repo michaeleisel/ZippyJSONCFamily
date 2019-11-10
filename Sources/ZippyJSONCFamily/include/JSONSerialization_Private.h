@@ -36,6 +36,7 @@ struct DecoderDummy {
 typedef struct DecoderDummy *DecoderPointer;
 #endif
 
+BOOL JNTHasVectorExtensions();
 ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString);
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
 BOOL JNTDocumentContains(DecoderPointer iterator, const char *key);
