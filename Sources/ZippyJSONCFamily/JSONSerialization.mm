@@ -257,9 +257,7 @@ static inline char JNTCheckHelper(Iterator& i) {
             return has;
         }
         do {
-            if (i.is_string()) {
-                has |= JNTChecker(i.get_string());
-            } else if (i.is_object_or_array()) {
+            if (i.is_object_or_array()) {
                 has |= JNTCheckHelper(i);
             }
         } while (i.next());
