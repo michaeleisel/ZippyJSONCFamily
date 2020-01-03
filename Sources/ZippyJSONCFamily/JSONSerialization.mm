@@ -73,7 +73,10 @@ public:
     std::string negInfString;
     std::string nanString;
 
-    JNTContext(std::string posInfString, std::string negInfString, std::string nanString) : emptyDictionaryParser(ParsedJson()), emptyDictionaryDecoder(JNTDecoder(JNTSetupEmptyDictionary(emptyDictionaryParser), this)), posInfString(posInfString), negInfString(negInfString), nanString(nanString) {
+    const char *originalString;
+    uint32_t originalStringLength;
+
+    JNTContext(const char *originalString, uint32_t originalStringLength, std::string posInfString, std::string negInfString, std::string nanString) : originalString(originalString), originalStringLength(originalStringLength), emptyDictionaryParser(ParsedJson()), emptyDictionaryDecoder(JNTDecoder(JNTSetupEmptyDictionary(emptyDictionaryParser), this)), posInfString(posInfString), negInfString(negInfString), nanString(nanString) {
         Iterator iterator = JNTSetupEmptyDictionary(emptyDictionaryParser);
     }
 };
@@ -153,7 +156,7 @@ template <typename T>
 static void JNTHandleNumberDoesNotFit(JNTDecoder *decoder, T number, const char *type) {
     char *description = nullptr;
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
-    asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String); //, type);
+    asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String);
     JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, decoder->context, decoder, "");
 }
 
@@ -270,21 +273,27 @@ static inline bool JNTCheck(Iterator i) {
     return (JNTCheckHelper(i) & 0x80) != '\0';
 }
 
-ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString) {
-    return new JNTContext(std::string(posInfString), std::string(negInfString), std::string(nanString));
+ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString) {
+    return new JNTContext(originalString, originalStringLength, std::string(posInfString), std::string(negInfString), std::string(nanString));
 }
 
+static uint64_t kDataLimit = (1ULL << 32) - 1;
+
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
+    if (length > kDataLimit) {
+        *retryReason = "The length of the JSON data is too long (see kDataLimit for the max)";
+    }
     context->parser.full_precision_float_parsing = fullPrecisionFloatParsing;
+    simdjson::padded_string ps = simdjson::padded_string((char *)data, length);
     NSInteger capacity = length ?: 1;
     bool success = context->parser.allocateCapacity(capacity);
     assert(success);
-    const int res = json_parse((const char *)data, length, context->parser);
+    const int res = json_parse(ps, context->parser);
     if (res != 0) {
         if (res != NUMBER_ERROR) { // retry number errors
             JNTHandleJSONParsingFailed(res, context);
         } else {
-            *retryReason = "A number was too large (couldn't fit in a 64-bit signed integer)";
+            *retryReason = "Either the JSON is malformed, e.g. passing a number as the root object, or an integer was too large (couldn't fit in a 64-bit signed integer)";
         }
         return NULL;
     }
@@ -344,6 +353,11 @@ namespace Converter {
     }
 }
 
+uint32_t JNTGetStringLength(DecoderPointer decoder) {
+    return decoder->iterator.get_string_length();
+}
+
+// Zero it out to be safe
 template <typename T, typename U, bool (*TypeCheck)(Iterator *), U (*Convert)(Iterator *)>
 static inline T JNTDocumentDecode(DecoderPointer decoder) {
     Iterator *iterator = &decoder->iterator;
@@ -358,6 +372,18 @@ static inline T JNTDocumentDecode(DecoderPointer decoder) {
         return 0;
     }
     return result;
+}
+
+NSInteger JNTDocumentGetArrayCount(DecoderPointer decoder) {
+    NSInteger count = 1;
+    NSInteger oldLocation = decoder->iterator.get_tape_location();
+    decoder->iterator.to_start_scope();
+    assert(decoder->iterator.get_tape_location() == oldLocation);
+    while (decoder->iterator.next()) {
+        count++;
+    }
+    decoder->iterator.to_start_scope();
+    return count;
 }
 
 void JNTDocumentNextArrayElement(DecoderPointer decoder, bool *isAtEnd) {
@@ -433,7 +459,7 @@ NSMutableArray <id> *JNTDocumentCodingPathHelper(Iterator iterator, Iterator *ta
             } while (iterator.next());
         }
     }
-    return [@[] mutableCopy];
+    return nil;
 }
 
 NSArray <id> *JNTDocumentCodingPath(DecoderPointer targetDecoder) {
@@ -441,11 +467,12 @@ NSArray <id> *JNTDocumentCodingPath(DecoderPointer targetDecoder) {
     if (JNTIteratorsEqual(&iterator, &targetDecoder->iterator)) {
         return @[];
     }
-    return JNTDocumentCodingPathHelper(iterator, &targetDecoder->iterator) ?: @[];
+    NSMutableArray *array = JNTDocumentCodingPathHelper(iterator, &targetDecoder->iterator);
+    return array ? [array copy] : @[];
 }
 
 NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer decoder) {
-    if (decoder->iterator.is_object()) {
+    if (decoder->iterator.is_string() && decoder->iterator.get_string_length() == 0) {
         return @[];
     }
     NSMutableArray <NSString *>*keys = [NSMutableArray array];
@@ -477,14 +504,30 @@ void JNTDocumentForAllKeyValuePairs(DecoderPointer decoderOriginal, void (^callb
     } while (iterator.next());
 }
 
+void JNTReleaseValue(DecoderPointer decoder) {
+    delete decoder;
+}
+
+DecoderPointer JNTDocumentCreateCopy(DecoderPointer decoder) {
+    return new JNTDecoder(*decoder);
+}
+
 DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder) {
-    decoder->context->decoders.emplace_back(*decoder);
+    DecoderPointer copy = JNTDocumentCreateCopy(decoder);
+    if (copy->iterator.down()) {
+        return copy;
+    } else {
+        JNTReleaseValue(copy);
+        return NULL;
+    }
+    /*decoder->context->decoders.emplace_back(*decoder);
     if (decoder->context->decoders.back().iterator.down()) {
-        return &(decoder->context->decoders.back());
+        //printf("z: %d\n", (int)decoder->context->decoders.size());
+        //return &(decoder->context->decoders.back());
     } else {
         decoder->context->decoders.pop_back();
         return NULL;
-    }
+    }*/
 }
 
 __attribute__((always_inline)) DecoderPointer JNTDocumentFetchValue(DecoderPointer decoder, const char *key) {
@@ -501,6 +544,40 @@ bool JNTDocumentValueIsDictionary(DecoderPointer decoder) {
 
 bool JNTDocumentValueIsArray(DecoderPointer decoder) {
     return decoder->iterator.is_array();
+}
+
+// todo: add 64-bit uint support when that comes around
+bool JNTDocumentValueIsInteger(DecoderPointer decoder) {
+    return decoder->iterator.is_integer();
+}
+
+bool JNTDocumentValueIsDouble(DecoderPointer decoder) {
+    return decoder->iterator.is_double();
+}
+
+bool JNTIsNumericCharacter(char c) {
+    return c == 'e' || c == 'E' || c == '-' || c == '.' || isnumber(c);
+}
+
+const char *JNTDocumentDecode__DecimalString(DecoderPointer decoder, int32_t *outLength) {
+    *outLength = 0; // Make sure it doesn't get left uninitialized
+    // todo: use uint64_t everywhere here if we ever support > 4GB files
+    uint32_t location = (uint32_t)decoder->iterator.get_tape_location();
+    uint32_t offset = decoder->context->parser.offsetForLocation(location);
+    const char *dataStart = decoder->context->originalString;
+    const char *dataEnd = dataStart + decoder->context->originalStringLength;
+    const char *string = dataStart + offset;
+    if (string >= dataEnd) {
+        return NULL;
+    }
+    int32_t length = 0;
+    // simdjson has already done validation on the numbers, so just try to find the end of the number.
+    // we could also use the structural character idxs, probably
+    while (JNTIsNumericCharacter(string[length]) && string + length < dataEnd) {
+        length++;
+    }
+    *outLength = length;
+    return string;
 }
 
 // todo: test with auto-converting of snake case, for a large json file like twitter

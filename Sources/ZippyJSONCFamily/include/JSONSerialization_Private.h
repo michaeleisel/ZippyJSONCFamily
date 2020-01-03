@@ -14,7 +14,6 @@ typedef CF_ENUM(size_t, JNTDecodingErrorType) {
     JNTDecodingErrorTypeNumberDoesNotFit,
     JNTDecodingErrorTypeWrongType,
     JNTDecodingErrorTypeJSONParsingFailed,
-    JNTDecodingErrorTypeWentPastEndOfArray
 };
 
 
@@ -36,8 +35,10 @@ struct DecoderDummy {
 typedef struct DecoderDummy *DecoderPointer;
 #endif
 
+bool JNTDocumentValueIsInteger(DecoderPointer decoder);
+bool JNTDocumentValueIsDouble(DecoderPointer decoder);
 BOOL JNTHasVectorExtensions();
-ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString);
+ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString);
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
 BOOL JNTDocumentContains(DecoderPointer iterator, const char *key);
 void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, DecoderPointer value, const char *key));
@@ -63,9 +64,13 @@ float JNTDocumentDecode__Float(DecoderPointer value);
 NSDate *JNTDocumentDecode__Date(DecoderPointer value);
 void *JNTDocumentDecode__Data(DecoderPointer value, int32_t *outLength);
 void JNTRunTests();
-NSDecimalNumber *JNTDocumentDecode__Decimal(DecoderPointer value);
+bool JNTDocumentValueIsNumber(DecoderPointer value);
+const char *JNTDocumentDecode__DecimalString(DecoderPointer value, int32_t *outLength);
+void JNTReleaseValue(DecoderPointer decoder);
+DecoderPointer JNTDocumentCreateCopy(DecoderPointer decoder);
 
 NSInteger JNTDocumentGetArrayCount(DecoderPointer value);
+uint32_t JNTGetStringLength(DecoderPointer decoder);
 
 @interface JNTCodingPath : NSObject
 
