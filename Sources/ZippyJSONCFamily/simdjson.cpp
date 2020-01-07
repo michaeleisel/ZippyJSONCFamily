@@ -767,16 +767,16 @@ ParsedJson::iterator::~iterator() {
 
 ParsedJson::iterator::iterator(const iterator &o):
     pj(o.pj), depth(o.depth), location(o.location),
-    tape_length(0), current_type(o.current_type),
+    tape_length(o.tape_length), current_type(o.current_type),
     current_val(o.current_val), depthindex(o.depthindex) {
-    tape_length = o.tape_length;
+    //*this = o;
 }
 
-ParsedJson::iterator::iterator(iterator &&o):
+/*ParsedJson::iterator::iterator(iterator &&o):
       pj(o.pj), depth(o.depth), location(o.location),
       tape_length(o.tape_length), current_type(o.current_type),
       current_val(o.current_val), depthindex(o.depthindex) {
-}
+}*/
 
 bool ParsedJson::iterator::print(std::ostream &os, bool escape_strings) const {
     if(!isOk()) { 

@@ -36661,10 +36661,10 @@ public:
 
     iterator(const iterator &o);
 
-    iterator(iterator &&o);
-
+    //iterator(iterator &&o);
+      
     inline bool isOk() const;
-
+      
     // useful for debuging purposes
     inline size_t get_tape_location() const;
 
@@ -36828,9 +36828,30 @@ public:
     // print the thing we're currently pointing at
     bool print(std::ostream &os, bool escape_strings = true) const;
     typedef struct {size_t start_of_scope; uint8_t scope_type;} scopeindex_t;
+      /*iterator& operator=(const iterator& other) {
+          //Iterator copy = Iterator(other);
+          //std::swap(*this, other);
+          //return *this;
+          iterator n = iterator(other);
+          return n;
+          //*this = iterator(other);
+          //return *this;
+      }*/
+      //iterator& operator=(const iterator& other) = default ;
+      //iterator& operator=(const iterator& other);// = delete ;
+      ParsedJson::iterator& operator=(const ParsedJson::iterator& o) {
+          this->depth = o.depth;
+          //pj(o.pj), depth(o.depth)
+          this->location = o.location;
+          this->tape_length = o.tape_length;
+          this->current_type = o.current_type;
+          this->current_val = o.current_val;
+          this->depthindex = o.depthindex;
+          return *this;
+      }
+
 
 private:
-    iterator& operator=(const iterator& other) = delete ;
 
     ParsedJson &pj;
     size_t depth;
@@ -36871,7 +36892,7 @@ private :
  // we don't want the default constructor to be called
  ParsedJson(const ParsedJson & p) = delete; // we don't want the default constructor to be called
  // we don't want the assignment to be called
- ParsedJson & operator=(const ParsedJson&o) = delete;
+ //ParsedJson & operator=(const ParsedJson&o) = delete;
 };
 
 
@@ -36946,37 +36967,6 @@ void ParsedJson::iterator::move_to_value() {
     current_val = pj.tape[location];
     current_type = (current_val >> 56);
 }
-
-
-/*bool ParsedJson::iterator::move_to_key(const char * key) {
-    if(down()) {
-      do {
-        assert(is_string());
-        bool rightkey = (strcmp(get_string(),key)==0);// null chars would fool this
-        move_to_value();
-        if(rightkey) { 
-          return true;
-        }
-      } while(next());
-      assert(up());// not found
-    }
-    return false;
-}
-
-bool ParsedJson::iterator::move_to_key(const char * key, uint32_t length) {
-    if(down()) {
-      do {
-        assert(is_string());
-        bool rightkey = ((get_string_length() == length) && (memcmp(get_string(),key,length)==0));
-        move_to_value();
-        if(rightkey) { 
-          return true;
-        }
-      } while(next());
-      assert(up());// not found
-    }
-    return false;
-}*/
 
 bool ParsedJson::iterator::search_for_key(const char * key, size_t length) {
     bool hasHitEnd = false;
