@@ -59,8 +59,6 @@ struct JNTContext { // static for classes?
 public:
     ParsedJson parser;
     JNTDecodingError error;
-    std::deque<JNTDecoder*> unusedDecoderPool;
-    std::deque<JNTDecoder*> usedDecoderPool;
     std::string snakeCaseBuffer;
 
     std::string posInfString;
@@ -135,9 +133,11 @@ static void JNTHandleMemberDoesNotExist(JNTDecoder *decoder, const char *key) {
 
 template <typename T>
 static void JNTHandleNumberDoesNotFit(JNTDecoder *decoder, T number, const char *type) {
-    char *description = nullptr;
+    //char *description = nullptr;
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
-    asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String);
+    std::ostringstream oss;
+    oss << "Parsed JSON number " << string.UTF8String << "%s does not fit.";
+    std::string description = oss.str();
     JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, decoder->context, decoder, "");
 }
 
@@ -284,19 +284,11 @@ DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSI
         *retryReason = "One or more keys had non-ASCII characters";
         return NULL;
     } else {
-        JNTDecoder *decoder = new JNTDecoder(iterator, context);
-        context->usedDecoderPool.push_back(decoder);
-        return decoder;
+        return new JNTDecoder(iterator, context);
     }
 }
 
 void JNTReleaseContext(JNTContext *context) {
-    for (auto it = context->usedDecoderPool.begin(); it != context->usedDecoderPool.end(); it++) {
-        delete *it;
-    }
-    for (auto it = context->unusedDecoderPool.begin(); it != context->unusedDecoderPool.end(); it++) {
-        delete *it;
-    }
     delete context;
 }
 
@@ -499,8 +491,8 @@ void JNTDocumentForAllKeyValuePairs(DecoderPointer decoderOriginal, void (^callb
 }
 
 void JNTReleaseValue(DecoderPointer decoder) {
-    //delete decoder;
-    auto &used = decoder->context->usedDecoderPool;
+    delete decoder;
+    /*auto &used = decoder->context->usedDecoderPool;
     auto &unused = decoder->context->unusedDecoderPool;
     if (used.back() == decoder) {
         used.pop_back();
@@ -508,12 +500,12 @@ void JNTReleaseValue(DecoderPointer decoder) {
         auto iter = std::find_if(used.begin(), used.end(), [decoder](auto const& o) { return o == decoder; });
         used.erase(iter);
     }
-    unused.push_back(decoder);
+    unused.push_back(decoder);*/
 }
 
 DecoderPointer JNTDocumentCreateCopy(DecoderPointer decoder) {
-    //return new JNTDecoder(decoder->iterator, decoder->context);
-    auto &used = decoder->context->usedDecoderPool;
+    return new JNTDecoder(decoder->iterator, decoder->context);
+    /*auto &used = decoder->context->usedDecoderPool;
     auto &unused = decoder->context->unusedDecoderPool;
     if (unused.empty()) {
         JNTDecoder *newDecoder = new JNTDecoder(decoder->iterator, decoder->context);
@@ -526,7 +518,7 @@ DecoderPointer JNTDocumentCreateCopy(DecoderPointer decoder) {
         used.back()->context = decoder->context;
         used.back()->iterator = decoder->iterator;//std::move(decoder->iterator);
     }
-    return used.back();
+    return used.back();*/
 }
 
 DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder, bool *isEmpty) {
