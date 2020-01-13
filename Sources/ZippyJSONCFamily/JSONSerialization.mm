@@ -131,7 +131,7 @@ static void JNTHandleJSONParsingFailed(int res, JNTContext *context) {
 static void JNTHandleWrongType(JNTDecoder *decoder, uint8_t type, const char *expectedType) {
     JNTDecodingErrorType errorType = type == 'n' ? JNTDecodingErrorTypeValueDoesNotExist : JNTDecodingErrorTypeWrongType;
     std::ostringstream oss;
-    oss << "Expected " << expectedType << " but found " << JNTStringForType(type) << " instead.";
+    oss << "Expected to decode " << expectedType << " but found " << JNTStringForType(type) << " instead.";
     JNTSetError(oss.str(), errorType, decoder->context, decoder, "");
 }
 
@@ -143,9 +143,11 @@ static void JNTHandleMemberDoesNotExist(JNTDecoder *decoder, const char *key) {
 
 template <typename T>
 static void JNTHandleNumberDoesNotFit(JNTDecoder *decoder, T number, const char *type) {
-    char *description = nullptr;
+    //char *description = nullptr;
     NS_VALID_UNTIL_END_OF_SCOPE NSString *string = [@(number) description];
-    asprintf(&description, "Parsed JSON number %s does not fit.", string.UTF8String); //, type);
+    std::ostringstream oss;
+    oss << "Parsed JSON number " << string.UTF8String << " does not fit.";
+    std::string description = oss.str();
     JNTSetError(description, JNTDecodingErrorTypeNumberDoesNotFit, decoder->context, decoder, "");
 }
 
