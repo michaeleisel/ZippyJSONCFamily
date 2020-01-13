@@ -36,6 +36,9 @@ struct DecoderDummy {
 typedef struct DecoderDummy *DecoderPointer;
 #endif
 
+void JNTClearError(ContextPointer context);
+ContextPointer JNTGetContext(DecoderPointer decoder);
+bool JNTDocumentErrorDidOccur(DecoderPointer decoder);
 BOOL JNTHasVectorExtensions();
 ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString);
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);

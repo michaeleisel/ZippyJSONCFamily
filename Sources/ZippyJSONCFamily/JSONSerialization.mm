@@ -71,8 +71,20 @@ public:
     }
 };
 
+void JNTClearError(ContextPointer context) {
+    context->error = JNTDecodingError();
+}
+
 bool JNTErrorDidOccur(ContextPointer context) {
     return context->error.type != JNTDecodingErrorTypeNone;
+}
+
+bool JNTDocumentErrorDidOccur(DecoderPointer decoder) {
+    return JNTErrorDidOccur(decoder->context);
+}
+
+ContextPointer JNTGetContext(DecoderPointer decoder) {
+    return decoder->context;
 }
 
 void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, DecoderPointer value, const char *key)) {
