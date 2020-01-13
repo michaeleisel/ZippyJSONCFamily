@@ -284,7 +284,7 @@ DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSI
         if (res != NUMBER_ERROR) { // retry number errors
             JNTHandleJSONParsingFailed(res, context);
         } else {
-            *retryReason = "A number was too large (couldn't fit in a 64-bit signed integer)";
+            *retryReason = "Either the JSON is malformed, e.g. passing a number as the root object, or an integer was too large (couldn't fit in a 64-bit signed integer)";
         }
         return NULL;
     }
