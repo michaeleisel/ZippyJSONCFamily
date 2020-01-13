@@ -64,8 +64,10 @@ public:
     std::string negInfString;
     std::string nanString;
 
-    JNTContext(std::string posInfString, std::string negInfString, std::string nanString) : emptyDictionaryParser(ParsedJson()), emptyDictionaryDecoder(JNTDecoder(JNTSetupEmptyDictionary(emptyDictionaryParser), this)), posInfString(posInfString), negInfString(negInfString), nanString(nanString) {
-        Iterator iterator = JNTSetupEmptyDictionary(emptyDictionaryParser);
+    const char *originalString;
+    uint32_t originalStringLength;
+
+    JNTContext(const char *originalString, uint32_t originalStringLength, std::string posInfString, std::string negInfString, std::string nanString) : originalString(originalString), originalStringLength(originalStringLength), posInfString(posInfString), negInfString(negInfString), nanString(nanString) {
     }
 };
 
@@ -248,8 +250,8 @@ static inline bool JNTCheck(Iterator i) {
     return (JNTCheckHelper(i) & 0x80) != '\0';
 }
 
-ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString) {
-    return new JNTContext(std::string(posInfString), std::string(negInfString), std::string(nanString));
+ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString) {
+    return new JNTContext(originalString, originalStringLength, std::string(posInfString), std::string(negInfString), std::string(nanString));
 }
 
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
@@ -493,7 +495,39 @@ bool JNTDocumentValueIsArray(DecoderPointer decoder) {
     return decoder->iterator.is_array();
 }
 
-// todo: test with auto-converting of snake case, for a large json file like twitter
+// todo: add 64-bit uint support when that comes around
+bool JNTDocumentValueIsInteger(DecoderPointer decoder) {
+    return decoder->iterator.is_integer();
+}
+
+bool JNTDocumentValueIsDouble(DecoderPointer decoder) {
+    return decoder->iterator.is_double();
+}
+
+bool JNTIsNumericCharacter(char c) {
+    return c == 'e' || c == 'E' || c == '-' || c == '.' || isnumber(c);
+}
+
+const char *JNTDocumentDecode__DecimalString(DecoderPointer decoder, int32_t *outLength) {
+    *outLength = 0; // Make sure it doesn't get left uninitialized
+    // todo: use uint64_t everywhere here if we ever support > 4GB files
+    uint32_t location = (uint32_t)decoder->iterator.get_tape_location();
+    uint32_t offset = decoder->context->parser.offsetForLocation(location);
+    const char *dataStart = decoder->context->originalString;
+    const char *dataEnd = dataStart + decoder->context->originalStringLength;
+    const char *string = dataStart + offset;
+    if (string >= dataEnd) {
+        return NULL;
+    }
+    int32_t length = 0;
+    // simdjson has already done validation on the numbers, so just try to find the end of the number.
+    // we could also use the structural character idxs, probably
+    while (JNTIsNumericCharacter(string[length]) && string + length < dataEnd) {
+        length++;
+    }
+    *outLength = length;
+    return string;
+}
 
 #define DECODE(A, B, C, D) DECODE_NAMED(A, B, C, D, A)
 

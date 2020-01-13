@@ -1,4 +1,8 @@
 struct JNTDecoder;
+#include <map>
+#include <vector>
+#include <algorithm>
+#include <limits>
 
 #define JSON_TEST_NUMBERS
 /* auto-generated on Tue Jul 30 21:03:17 EDT 2019. Do not edit! */
@@ -36563,6 +36567,7 @@ public:
   ParsedJson();
   ~ParsedJson();
   ParsedJson(ParsedJson && p);
+  typedef std::pair<uint32_t, uint32_t> LocationPair;
 
   // if needed, allocate memory so that the object is able to process JSON
   // documents having up to len bytes and maxdepth "depth"
@@ -36594,6 +36599,16 @@ public:
   WARN_UNUSED
   bool dump_raw_tape(std::ostream &os);
 
+  really_inline uint32_t offsetForLocation(uint32_t location) {
+      // does it include the end of the iterator? what if the vector is empty?
+      LocationPair pair(location, 0);
+      LocationPair lowerBound = *std::lower_bound(location_to_offset.begin(), location_to_offset.end(), pair);
+      if (lowerBound.first == location) {
+          return lowerBound.second;
+      } else {
+          return ~0;
+      }
+  }
 
   // all nodes are stored on the tape using a 64-bit word.
   //
@@ -36619,9 +36634,10 @@ public:
       tape[current_loc++] = *(reinterpret_cast<uint64_t *>(&i));
   }
 
-  really_inline void write_tape_double(double d) {
+  really_inline void write_tape_double(double d, uint32_t offset) {
     write_tape(0, 'd');
     static_assert(sizeof(d) == sizeof(tape[current_loc]), "mismatch size");
+    location_to_offset.emplace_back(LocationPair(current_loc - 1, offset));
     memcpy(& tape[current_loc++], &d, sizeof(double));
     //tape[current_loc++] = *((uint64_t *)&d);
   }
@@ -36828,6 +36844,7 @@ private:
   size_t bytecapacity{0};  // indicates how many bits are meant to be supported
   bool full_precision_float_parsing = false;
 
+  std::vector<LocationPair> location_to_offset;
   size_t depthcapacity{0}; // how deep we can go
   size_t tapecapacity{0};
   size_t stringcapacity{0};
@@ -38646,7 +38663,7 @@ parse_float(const uint8_t *const buf,
     return false;
   }
   double d = negative ? -i : i;
-  pj.write_tape_double(d);
+  pj.write_tape_double(d, offset);
 #ifdef JSON_TEST_NUMBERS // for unit testing
   foundFloat(d, buf + offset);
 #endif
@@ -38757,7 +38774,7 @@ static bool parse_full_precision_float(const uint8_t *const buf, const uint32_t 
         if (found_minus && result > 0) {
             result = -result;
         }
-        pj.write_tape_double(result);
+        pj.write_tape_double(result, offset);
 #ifdef JSON_TEST_NUMBERS // for unit testing
         foundFloat(result, buf + offset);
 #endif
@@ -38937,7 +38954,7 @@ static really_inline bool parse_number(const uint8_t *const buf,
     double factor = power_of_ten[powerindex];
     factor = negative ? -factor : factor;
     double d = i * factor;
-    pj.write_tape_double(d);
+    pj.write_tape_double(d, offset);
 #ifdef JSON_TEST_NUMBERS // for unit testing
     foundFloat(d, buf + offset);
 #endif
