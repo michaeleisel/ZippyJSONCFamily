@@ -268,7 +268,12 @@ ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStr
     return new JNTContext(originalString, originalStringLength, std::string(posInfString), std::string(negInfString), std::string(nanString));
 }
 
+static uint64_t kDataLimit = (1ULL << 32) - 1;
+
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing) {
+    if (length > kDataLimit) {
+        *retryReason = "The length of the JSON data is too long (see kDataLimit for the max)";
+    }
     context->parser.full_precision_float_parsing = fullPrecisionFloatParsing;
     NSInteger capacity = length ?: 1;
     bool success = context->parser.allocateCapacity(capacity);
