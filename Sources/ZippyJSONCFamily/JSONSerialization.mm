@@ -449,7 +449,7 @@ NSMutableArray <id> *JNTDocumentCodingPathHelper(Iterator iterator, Iterator *ta
             } while (iterator.next());
         }
     }
-    return [@[] mutableCopy];
+    return nil;
 }
 
 NSArray <id> *JNTDocumentCodingPath(DecoderPointer targetDecoder) {
@@ -457,7 +457,8 @@ NSArray <id> *JNTDocumentCodingPath(DecoderPointer targetDecoder) {
     if (JNTIteratorsEqual(&iterator, &targetDecoder->iterator)) {
         return @[];
     }
-    return JNTDocumentCodingPathHelper(iterator, &targetDecoder->iterator) ?: @[];
+    NSMutableArray *array = JNTDocumentCodingPathHelper(iterator, &targetDecoder->iterator);
+    return array ? [array copy] : @[];
 }
 
 NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer decoder, bool isEmpty) {
