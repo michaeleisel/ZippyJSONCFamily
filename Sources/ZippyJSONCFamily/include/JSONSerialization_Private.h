@@ -14,7 +14,6 @@ typedef CF_ENUM(size_t, JNTDecodingErrorType) {
     JNTDecodingErrorTypeNumberDoesNotFit,
     JNTDecodingErrorTypeWrongType,
     JNTDecodingErrorTypeJSONParsingFailed,
-    JNTDecodingErrorTypeWentPastEndOfArray
 };
 
 
