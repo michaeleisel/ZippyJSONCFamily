@@ -361,6 +361,18 @@ static inline T JNTDocumentDecode(DecoderPointer decoder) {
     return result;
 }
 
+NSInteger JNTDocumentGetArrayCount(DecoderPointer decoder) {
+    NSInteger count = 1;
+    NSInteger oldLocation = decoder->iterator.get_tape_location();
+    decoder->iterator.to_start_scope();
+    assert(decoder->iterator.get_tape_location() == oldLocation);
+    while (decoder->iterator.next()) {
+        count++;
+    }
+    decoder->iterator.to_start_scope();
+    return count;
+}
+
 void JNTDocumentNextArrayElement(DecoderPointer decoder, bool *isAtEnd) {
     if (*isAtEnd) {
         return;
