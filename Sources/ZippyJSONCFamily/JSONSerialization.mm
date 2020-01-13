@@ -34,10 +34,6 @@ BOOL JNTHasVectorExtensions() {
 #endif
 }
 
-// Unless the lib ever supports custom key decoding, it will never try to lookup an empty string as a key
-static const char kEmptyDictionaryString[] = "{\"\": 0}";
-static const char kEmptyDictionaryStringLength = sizeof(kEmptyDictionaryString) - 1;
-
 struct JNTContext;
 
 struct JNTDecoder {
@@ -58,14 +54,10 @@ struct JNTDecodingError {
     }
 };
 
-Iterator JNTSetupEmptyDictionary(ParsedJson &parser);
-
 struct JNTContext { // static for classes?
 public:
     ParsedJson parser;
     std::deque<JNTDecoder> decoders;
-    ParsedJson emptyDictionaryParser;
-    JNTDecoder emptyDictionaryDecoder;
     JNTDecodingError error;
     std::string snakeCaseBuffer;
 
@@ -87,20 +79,7 @@ void JNTProcessError(ContextPointer context, void (^block)(const char *descripti
     block(error.description.c_str(), error.type, error.value, error.key.c_str());
 }
 
-Iterator JNTSetupEmptyDictionary(ParsedJson &parser) {
-    bool success = parser.allocateCapacity(kEmptyDictionaryStringLength);
-    assert(success);
-    json_parse(kEmptyDictionaryString, kEmptyDictionaryStringLength, parser);
-    Iterator emptyDictionaryIterator = Iterator(parser);
-    emptyDictionaryIterator.down();
-    return emptyDictionaryIterator;
-}
-
 typedef JNTDecoder *DecoderPointer;
-
-DecoderPointer JNTEmptyDictionaryDecoder(DecoderPointer decoder) {
-    return &(decoder->context->emptyDictionaryDecoder);
-}
 
 static const char *JNTStringForType(uint8_t type) {
     switch (type) {
@@ -303,7 +282,10 @@ void JNTReleaseContext(JNTContext *context) {
     delete context;
 }
 
-BOOL JNTDocumentContains(DecoderPointer decoder, const char *key) {
+BOOL JNTDocumentContains(DecoderPointer decoder, const char *key, bool isEmpty) {
+    if (isEmpty) {
+        return false;
+    }
     decoder->iterator.prev_string();
     return decoder->iterator.search_for_key(key, strlen(key));
 }
@@ -361,6 +343,9 @@ static inline T JNTDocumentDecode(DecoderPointer decoder) {
 }
 
 void JNTDocumentNextArrayElement(DecoderPointer decoder, bool *isAtEnd) {
+    if (*isAtEnd) {
+        return;
+    }
     *isAtEnd = !decoder->iterator.next();
 }
 
@@ -444,8 +429,8 @@ NSArray <id> *JNTDocumentCodingPath(DecoderPointer targetDecoder) {
     return JNTDocumentCodingPathHelper(iterator, &targetDecoder->iterator) ?: @[];
 }
 
-NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer decoder) {
-    if (decoder->iterator.is_object()) {
+NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer decoder, bool isEmpty) {
+    if (isEmpty) {
         return @[];
     }
     NSMutableArray <NSString *>*keys = [NSMutableArray array];
@@ -487,7 +472,11 @@ DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder) {
     }
 }
 
-__attribute__((always_inline)) DecoderPointer JNTDocumentFetchValue(DecoderPointer decoder, const char *key) {
+__attribute__((always_inline)) DecoderPointer JNTDocumentFetchValue(DecoderPointer decoder, const char *key, bool isEmpty) {
+    if (isEmpty) {
+        JNTHandleMemberDoesNotExist(decoder, key);
+        return decoder;
+    }
     decoder->iterator.prev_string();
     if (!decoder->iterator.search_for_key(key, strlen(key))) {
         JNTHandleMemberDoesNotExist(decoder, key);

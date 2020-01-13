@@ -39,24 +39,21 @@ typedef struct DecoderDummy *DecoderPointer;
 BOOL JNTHasVectorExtensions();
 ContextPointer JNTCreateContext(const char *negInfString, const char *posInfString, const char *nanString);
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
-BOOL JNTDocumentContains(DecoderPointer iterator, const char *key);
+BOOL JNTDocumentContains(DecoderPointer iterator, const char *key, bool isEmpty);
 void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, DecoderPointer value, const char *key));
 bool JNTErrorDidOccur(ContextPointer context);
+DecoderPointer JNTDocumentFetchValue(DecoderPointer decoder, const char *key, bool isEmpty);
 BOOL JNTDocumentDecodeNil(DecoderPointer documentPtr);
 void JNTReleaseContext(ContextPointer context);
 DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
 void JNTDocumentNextArrayElement(DecoderPointer iterator, bool *isAtEnd);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
 bool JNTDocumentValueIsArray(DecoderPointer iterator);
-DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer iterator);
 bool JNTDocumentValueIsDictionary(DecoderPointer iterator);
-NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer iterator);
+NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer decoder, bool isEmpty);
 NSArray <id> *JNTDocumentCodingPath(DecoderPointer iterator);
 void JNTDocumentForAllKeyValuePairs(DecoderPointer iterator, void (^callback)(const char *key, DecoderPointer iterator));
 void JNTConvertSnakeToCamel(DecoderPointer iterator);
-DecoderPointer JNTEmptyDictionaryDecoder(DecoderPointer decoder);
-
-DecoderPointer JNTDocumentFetchValue(DecoderPointer value, const char *key);
 
 double JNTDocumentDecode__Double(DecoderPointer value);
 float JNTDocumentDecode__Float(DecoderPointer value);
@@ -64,6 +61,7 @@ NSDate *JNTDocumentDecode__Date(DecoderPointer value);
 void *JNTDocumentDecode__Data(DecoderPointer value, int32_t *outLength);
 void JNTRunTests();
 NSDecimalNumber *JNTDocumentDecode__Decimal(DecoderPointer value);
+DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder, bool *isEmpty);
 
 NSInteger JNTDocumentGetArrayCount(DecoderPointer value);
 
