@@ -61,6 +61,8 @@ NSDate *JNTDocumentDecode__Date(DecoderPointer value);
 void *JNTDocumentDecode__Data(DecoderPointer value, int32_t *outLength);
 void JNTRunTests();
 NSDecimalNumber *JNTDocumentDecode__Decimal(DecoderPointer value);
+void JNTReleaseValue(DecoderPointer decoder);
+DecoderPointer JNTDocumentCreateCopy(DecoderPointer decoder);
 DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder, bool *isEmpty);
 
 NSInteger JNTDocumentGetArrayCount(DecoderPointer value);

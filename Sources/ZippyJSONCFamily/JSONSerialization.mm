@@ -57,7 +57,6 @@ struct JNTDecodingError {
 struct JNTContext { // static for classes?
 public:
     ParsedJson parser;
-    std::deque<JNTDecoder> decoders;
     JNTDecodingError error;
     std::string snakeCaseBuffer;
 
@@ -267,14 +266,12 @@ DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSI
         }
         return NULL;
     }
-    Iterator iterator = Iterator(context->parser); // todo: remove conflict with swift Iterator and this one
-    JNTDecoder decoder = JNTDecoder(iterator, context);
+    Iterator iterator = Iterator(context->parser);
     if (JNTCheck(iterator)) {
         *retryReason = "One or more keys had non-ASCII characters";
         return NULL;
     } else {
-        context->decoders.push_back(decoder);
-        return &(context->decoders.back());
+        return new JNTDecoder(iterator, context);
     }
 }
 
@@ -462,14 +459,18 @@ void JNTDocumentForAllKeyValuePairs(DecoderPointer decoderOriginal, void (^callb
     } while (iterator.next());
 }
 
-DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder) {
-    decoder->context->decoders.emplace_back(*decoder);
-    if (decoder->context->decoders.back().iterator.down()) {
-        return &(decoder->context->decoders.back());
-    } else {
-        decoder->context->decoders.pop_back();
-        return NULL;
-    }
+void JNTReleaseValue(DecoderPointer decoder) {
+    delete decoder;
+}
+
+DecoderPointer JNTDocumentCreateCopy(DecoderPointer decoder) {
+    return new JNTDecoder(decoder->iterator, decoder->context);
+}
+
+DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder, bool *isEmpty) {
+    DecoderPointer copy = JNTDocumentCreateCopy(decoder);
+    *isEmpty = !copy->iterator.down();
+    return copy;
 }
 
 __attribute__((always_inline)) DecoderPointer JNTDocumentFetchValue(DecoderPointer decoder, const char *key, bool isEmpty) {
