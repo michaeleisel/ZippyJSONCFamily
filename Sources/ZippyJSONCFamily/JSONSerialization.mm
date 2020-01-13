@@ -480,7 +480,8 @@ NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer decoder, bool isEmpty) {
 void JNTDocumentForAllKeyValuePairs(DecoderPointer decoderOriginal, void (^callback)(const char *key, DecoderPointer decoder)) {
     // Make a copy of the iterator
     Iterator iterator = decoderOriginal->iterator;
-    if (iterator.get_scope_type() != '{') {
+    if (iterator.get_type() != '{') {
+        JNTHandleWrongType(decoderOriginal, iterator.get_type(), "{");
         return;
     }
     if (!iterator.down()) {
