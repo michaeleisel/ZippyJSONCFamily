@@ -275,10 +275,11 @@ DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSI
         *retryReason = "The length of the JSON data is too long (see kDataLimit for the max)";
     }
     context->parser.full_precision_float_parsing = fullPrecisionFloatParsing;
+    simdjson::padded_string ps = simdjson::padded_string((char *)data, length);
     NSInteger capacity = length ?: 1;
     bool success = context->parser.allocateCapacity(capacity);
     assert(success);
-    const int res = json_parse((const char *)data, length, context->parser);
+    const int res = json_parse(ps, context->parser);
     if (res != 0) {
         if (res != NUMBER_ERROR) { // retry number errors
             JNTHandleJSONParsingFailed(res, context);
