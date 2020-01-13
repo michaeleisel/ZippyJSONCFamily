@@ -36828,10 +36828,18 @@ public:
     // print the thing we're currently pointing at
     bool print(std::ostream &os, bool escape_strings = true) const;
     typedef struct {size_t start_of_scope; uint8_t scope_type;} scopeindex_t;
+      ParsedJson::iterator& operator=(const ParsedJson::iterator& o) {
+          this->depth = o.depth;
+          this->location = o.location;
+          this->tape_length = o.tape_length;
+          this->current_type = o.current_type;
+          this->current_val = o.current_val;
+          this->depthindex = o.depthindex;
+          return *this;
+      }
+
 
 private:
-    iterator& operator=(const iterator& other) = delete ;
-
     ParsedJson &pj;
     size_t depth;
     size_t location;     // our current location on a tape
@@ -36871,7 +36879,7 @@ private :
  // we don't want the default constructor to be called
  ParsedJson(const ParsedJson & p) = delete; // we don't want the default constructor to be called
  // we don't want the assignment to be called
- ParsedJson & operator=(const ParsedJson&o) = delete;
+ //ParsedJson & operator=(const ParsedJson&o) = delete;
 };
 
 
