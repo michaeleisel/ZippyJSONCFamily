@@ -36955,42 +36955,11 @@ void ParsedJson::iterator::move_to_value() {
     current_type = (current_val >> 56);
 }
 
-
-/*bool ParsedJson::iterator::move_to_key(const char * key) {
-    if(down()) {
-      do {
-        assert(is_string());
-        bool rightkey = (strcmp(get_string(),key)==0);// null chars would fool this
-        move_to_value();
-        if(rightkey) { 
-          return true;
-        }
-      } while(next());
-      assert(up());// not found
-    }
-    return false;
-}
-
-bool ParsedJson::iterator::move_to_key(const char * key, uint32_t length) {
-    if(down()) {
-      do {
-        assert(is_string());
-        bool rightkey = ((get_string_length() == length) && (memcmp(get_string(),key,length)==0));
-        move_to_value();
-        if(rightkey) { 
-          return true;
-        }
-      } while(next());
-      assert(up());// not found
-    }
-    return false;
-}*/
-
 bool ParsedJson::iterator::search_for_key(const char * key, size_t length) {
     bool hasHitEnd = false;
     uint32_t start_loc = location;
     do {
-        assert(is_string()); // todo: remove all asserts?
+        assert(is_string());
         bool rightkey = ((get_string_length() == length) && (memcmp(get_string(),key,length)==0));
         move_to_value();
         if(rightkey) {
