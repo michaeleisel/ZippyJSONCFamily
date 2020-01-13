@@ -39090,7 +39090,7 @@ int unified_machine(const uint8_t *buf, size_t len, ParsedJson &pj) {
     }
     pj.write_tape(0, c);
     goto array_begin;
-#define SIMDJSON_ALLOWANYTHINGINROOT
+// #define SIMDJSON_ALLOWANYTHINGINROOT
     // A JSON text is a serialized value.  Note that certain previous
     // specifications of JSON constrained a JSON text to be an object or an
     // array.  Implementations that generate only objects or arrays where a
