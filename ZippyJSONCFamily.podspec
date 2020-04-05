@@ -30,6 +30,7 @@ This is a library meant only to support ZippyJSON and provide a workaround for a
   s.library = 'c++'
   s.pod_target_xcconfig = {
     'CLANG_X86_VECTOR_INSTRUCTIONS' => 'avx',
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
   }
 
   s.source_files = 'Sources/**/*.{h,hh,mm,m,c,cpp,swift}'
