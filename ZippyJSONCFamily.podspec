@@ -31,9 +31,10 @@ This is a library meant only to support ZippyJSON and provide a workaround for a
   s.pod_target_xcconfig = {
     'CLANG_X86_VECTOR_INSTRUCTIONS' => 'avx',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    'OTHER_CFLAGS' => '-Wno-return-type-c-linkage',
   }
 
   s.source_files = 'Sources/**/*.{h,hh,mm,m,c,cpp,swift}'
   s.public_header_files = 'Sources/**/*.h'
-  s.private_header_files = ['Sources/ZippyJSONCFamily/*.h', 'Sources/ZippyJSONCFamily/rapidjson/**/*.h']
+  s.private_header_files = ['Sources/ZippyJSONCFamily/*.h']
 end
