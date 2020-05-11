@@ -692,6 +692,7 @@ inline char *allocate_padded_buffer(size_t length) noexcept;
 #include <string>
 #include <atomic>
 #include <vector>
+#include <unordered_map>
 /* begin file include/simdjson/document.h */
 #ifndef SIMDJSON_DOCUMENT_H
 #define SIMDJSON_DOCUMENT_H
@@ -1335,6 +1336,37 @@ public:
   */
   really_inline parser(size_t max_capacity = SIMDJSON_MAXSIZE_BYTES) noexcept;
 
+  std::vector<std::pair<uint64_t, uint64_t>> number_pairs;
+  really_inline void add_number_pair(uint64_t tape_loc, const uint8_t *ptr) {
+    uint64_t offset = ptr - buf_start;
+    auto pair = std::make_pair(tape_loc, offset);
+    number_pairs.emplace_back(pair);
+  }
+
+  const uint8_t *buf_start = NULL;
+
+  void assemble_hash_if_necessary() {
+      if (has_assembled_hash) {
+          return;
+      }
+      tape_loc_to_offset = std::unordered_map<uint64_t, uint64_t>(number_pairs.begin(), number_pairs.end());
+      has_assembled_hash = true;
+  }
+
+  std::unordered_map<uint64_t, uint64_t> tape_loc_to_offset;
+  bool has_assembled_hash = false;
+    really_inline uint64_t offset_for_element(dom::element element) {
+        assemble_hash_if_necessary();
+        auto ref = (simdjson::internal::tape_ref *)&element;
+        uint64_t tape_loc = ref->json_index;
+        auto iter = tape_loc_to_offset.find(tape_loc);
+        if (iter == tape_loc_to_offset.end()) {
+            return NULL;
+        }
+        return iter->second;
+    }
+
+  
   /**
    * Take another parser's buffers and state.
    *
@@ -3283,6 +3315,7 @@ inline simdjson_result<element> parser::parse(const uint8_t *buf, size_t len, bo
     memcpy((void *)buf, tmp_buf, len);
   }
 
+  buf_start = buf;
   code = simdjson::active_implementation->parse(buf, len, *this);
   if (realloc_if_needed) {
     aligned_free((void *)buf); // must free before we exit

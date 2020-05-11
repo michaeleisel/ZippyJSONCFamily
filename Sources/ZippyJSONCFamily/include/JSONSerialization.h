@@ -38,49 +38,51 @@ struct JNTDecoderStorage {
 
 #ifdef __cplusplus
 struct JNTDecoder;
+typedef simdjson::dom::array::iterator JNTIterator;
 #else
 typedef struct JNTDecoderStorage JNTDecoder;
+typedef struct JNTElementStorage JNTIterator;
 #endif
+
 //typedef JNTDecoder Decoder;
 typedef JNTDecoder *DecoderPointer;
 
+JNTIterator JNTDocumentGetIterator(JNTDecoder decoder);
 bool JNTDocumentIsEmpty(DecoderPointer decoder);
 void JNTClearError(ContextPointer context);
-ContextPointer JNTGetContext(DecoderPointer decoder);
-bool JNTDocumentErrorDidOccur(DecoderPointer decoder);
-bool JNTDocumentValueIsInteger(DecoderPointer decoder);
-bool JNTDocumentValueIsDouble(DecoderPointer decoder);
-BOOL JNTHasVectorExtensions();
+ContextPointer JNTGetContext(JNTDecoder decoder);
+bool JNTDocumentErrorDidOccur(JNTDecoder decoder);
+bool JNTDocumentValueIsInteger(JNTDecoder decoder);
+bool JNTDocumentValueIsDouble(JNTDecoder decoder);
+bool JNTHasVectorExtensions();
 ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString);
-DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
-BOOL JNTDocumentContains(DecoderPointer iterator, const char *key);
-void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, DecoderPointer value, const char *key));
+JNTDecoder JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool *success);
+bool JNTDocumentContains(JNTDecoder iterator, const char *key);
+void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, JNTDecoder value, const char *key));
 bool JNTErrorDidOccur(ContextPointer context);
-JNTDecoder JNTDocumentFetchValue(DecoderPointer decoder, const char *key);
-BOOL JNTDocumentDecodeNil(DecoderPointer documentPtr);
+JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key);
+bool JNTDocumentDecodeNil(JNTDecoder documentPtr);
 void JNTReleaseContext(ContextPointer context);
-DecoderPointer JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool fullPrecisionFloatParsing);
-void JNTDocumentNextArrayElement(DecoderPointer iterator, bool *isAtEnd);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
-bool JNTDocumentValueIsArray(DecoderPointer iterator);
-bool JNTDocumentValueIsDictionary(DecoderPointer iterator);
-NSArray <NSString *> *JNTDocumentAllKeys(DecoderPointer decoder);
-NSArray <id> *JNTDocumentCodingPath(DecoderPointer iterator);
-void JNTDocumentForAllKeyValuePairs(DecoderPointer iterator, void (^callback)(const char *key, DecoderPointer iterator));
-void JNTConvertSnakeToCamel(DecoderPointer iterator);
+bool JNTDocumentValueIsArray(JNTDecoder iterator);
+bool JNTDocumentValueIsDictionary(JNTDecoder iterator);
+NSArray <NSString *> *JNTDocumentAllKeys(JNTDecoder decoder);
+NSArray <id> *JNTDocumentCodingPath(JNTDecoder iterator);
+void JNTDocumentForAllKeyValuePairs(JNTDecoder iterator, void (^callback)(const char *key, JNTDecoder iterator));
+void JNTConvertSnakeToCamel(JNTDecoder iterator);
+JNTDecoder JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder prevDecoder);
 
-double JNTDocumentDecode__Double(DecoderPointer value);
-float JNTDocumentDecode__Float(DecoderPointer value);
-NSDate *JNTDocumentDecode__Date(DecoderPointer value);
-void *JNTDocumentDecode__Data(DecoderPointer value, int32_t *outLength);
+double JNTDocumentDecode__Double(JNTDecoder value);
+float JNTDocumentDecode__Float(JNTDecoder value);
+NSDate *JNTDocumentDecode__Date(JNTDecoder value);
+void *JNTDocumentDecode__Data(JNTDecoder value, int32_t *outLength);
 void JNTRunTests();
-bool JNTDocumentValueIsNumber(DecoderPointer value);
-const char *JNTDocumentDecode__DecimalString(DecoderPointer value, int32_t *outLength);
-void JNTReleaseValue(DecoderPointer decoder);
-DecoderPointer JNTDocumentCreateCopy(DecoderPointer decoder);
-DecoderPointer JNTDocumentEnterStructureAndReturnCopy(DecoderPointer decoder, bool *isEmpty);
+bool JNTDocumentValueIsNumber(JNTDecoder value);
+const char *JNTDocumentDecode__DecimalString(JNTDecoder value, int32_t *outLength);
+// void JNTReleaseValue(DecoderPointer decoder);
+JNTDecoder JNTDocumentCreateCopy(JNTDecoder decoder);
 
-NSInteger JNTDocumentGetArrayCount(DecoderPointer value);
+NSInteger JNTDocumentGetArrayCount(JNTDecoder value);
 
 @interface JNTCodingPath : NSObject
 
@@ -94,12 +96,12 @@ NSInteger JNTDocumentGetArrayCount(DecoderPointer value);
 #define DECODE_KEYED_HEADER(A, B) DECODE_KEYED_HEADER_NAMED(A, B, A)
 
 #define DECODE_KEYED_HEADER_NAMED(A, B, C) \
-A JNTDocumentDecodeKeyed__##C(DecoderPointer value, const char *key);
+A JNTDocumentDecodeKeyed__##C(JNTDecoder value, const char *key);
 
 #define DECODE_HEADER(A, B) DECODE_HEADER_NAMED(A, B, A)
 
 #define DECODE_HEADER_NAMED(A, B, C) \
-A JNTDocumentDecode__##C(DecoderPointer value);
+A JNTDocumentDecode__##C(JNTDecoder value);
 
 #define ENUMERATE(F) \
 F(int8_t, int64_t); \
@@ -113,7 +115,9 @@ F(uint64_t, uint64_t); \
 F##_NAMED(bool, bool, Bool); \
 F##_NAMED(const char *, const char *, String); \
 F##_NAMED(NSInteger, int64_t, Int); \
-F##_NAMED(NSUInteger, uint64_t, UInt);
+F##_NAMED(NSUInteger, uint64_t, UInt); \
+F##_NAMED(double, double, Double); \
+F##_NAMED(float, double, Float);
 
 ENUMERATE(DECODE_HEADER);
 

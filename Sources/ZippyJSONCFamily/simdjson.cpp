@@ -10742,6 +10742,7 @@ struct structural_parser {
   }
 
   WARN_UNUSED really_inline bool parse_number(const uint8_t *src, bool found_minus) {
+      doc_parser.add_number_pair(doc_parser.current_loc, src);
     return !numberparsing::parse_number(src, found_minus, doc_parser);
   }
   WARN_UNUSED really_inline bool parse_number(bool found_minus) {

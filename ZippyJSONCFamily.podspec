@@ -32,6 +32,7 @@ This is a library meant only to support ZippyJSON and provide a workaround for a
     'CLANG_X86_VECTOR_INSTRUCTIONS' => 'avx',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'OTHER_CFLAGS' => '-Wno-return-type-c-linkage',
+    'USER_HEADER_SEARCH_PATHS' => '${PROJECT_DIR}/asdf',
   }
 
   s.source_files = 'Sources/**/*.{h,hh,mm,m,c,cpp,swift}'
