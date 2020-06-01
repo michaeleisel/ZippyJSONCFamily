@@ -47,6 +47,7 @@ typedef struct JNTElementStorage JNTIterator;
 //typedef JNTDecoder Decoder;
 typedef JNTDecoder *DecoderPointer;
 
+JNTDecoder JNTDecoderFromIterator(JNTIterator *iterator, JNTDecoder root);
 JNTIterator JNTDocumentGetIterator(JNTDecoder decoder);
 bool JNTDocumentIsEmpty(DecoderPointer decoder);
 void JNTClearError(ContextPointer context);
@@ -70,7 +71,7 @@ NSArray <NSString *> *JNTDocumentAllKeys(JNTDecoder decoder);
 NSArray <id> *JNTDocumentCodingPath(JNTDecoder iterator);
 void JNTDocumentForAllKeyValuePairs(JNTDecoder iterator, void (^callback)(const char *key, JNTDecoder iterator));
 void JNTConvertSnakeToCamel(JNTDecoder iterator);
-JNTDecoder JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder prevDecoder);
+void JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder root);
 
 double JNTDocumentDecode__Double(JNTDecoder value);
 float JNTDocumentDecode__Float(JNTDecoder value);
@@ -103,6 +104,11 @@ A JNTDocumentDecodeKeyed__##C(JNTDecoder value, const char *key);
 #define DECODE_HEADER_NAMED(A, B, C) \
 A JNTDocumentDecode__##C(JNTDecoder value);
 
+#define DECODE_ITER_HEADER(A, B) DECODE_ITER_HEADER_NAMED(A, B, A)
+
+#define DECODE_ITER_HEADER_NAMED(A, B, C) \
+A JNTDocumentDecodeIter__##C(JNTDecoder value, JNTIterator iterator);
+
 #define ENUMERATE(F) \
 F(int8_t, int64_t); \
 F(uint8_t, int64_t); \
@@ -120,5 +126,6 @@ F##_NAMED(double, double, Double); \
 F##_NAMED(float, double, Float);
 
 ENUMERATE(DECODE_HEADER);
+ENUMERATE(DECODE_ITER_HEADER);
 
 CF_EXTERN_C_END

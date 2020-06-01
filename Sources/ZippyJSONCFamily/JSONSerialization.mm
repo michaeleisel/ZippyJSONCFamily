@@ -318,21 +318,22 @@ bool JNTDocumentContains(JNTDecoder decoder, const char *key) {
 }
 
 template <typename T, typename U>
-static inline T JNTDocumentDecode(JNTDecoder decoder) {
-    simdjson_result<U> value = decoder.element.get<U>();
+static inline T JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
+    simdjson_result<U> value = element.get<U>();
     if (value.error()) {
-        JNTHandleWrongType(decoder, decoder.element.type(), typeid(T).name());
+        JNTHandleWrongType(decoder, element.type(), typeid(T).name());
+        return (T)0;
     }
     return (T)value.value();
 }
 
 template <typename U = double>
-inline double JNTDocumentDecode(JNTDecoder decoder) {
-    if (decoder.element.is<double>()) {
-        return decoder.element;
+inline double JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
+    if (element.is<double>()) {
+        return element;
     } else {
-        if (decoder.element.is<std::string_view>()) {
-            std::string_view string = decoder.element;
+        if (element.is<std::string_view>()) {
+            std::string_view string = element;
             if (string == decoder.context->posInfString) {
                 return INFINITY;
             } else if (string == decoder.context->negInfString) {
@@ -341,14 +342,14 @@ inline double JNTDocumentDecode(JNTDecoder decoder) {
                 return NAN;
             }
         }
-        JNTHandleWrongType(decoder, decoder.element.type(), "double/float");
+        JNTHandleWrongType(decoder, element.type(), "double/float");
         return 0;
     }
 }
 
 template <typename U = double>
-inline float JNTDocumentDecode(JNTDecoder decoder) {
-    return (float)JNTDocumentDecode<double, double>(decoder);
+inline float JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
+    return (float)JNTDocumentDecode<double, double>(decoder, element);
 }
 
 // Pre-condition: element is an array type
@@ -361,12 +362,14 @@ NSInteger JNTDocumentGetArrayCount(JNTDecoder decoder) {
     return count;
 }
 
-JNTDecoder JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder prevDecoder) {
-    dom::array array = prevDecoder.element;
+void JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder root) {
+    dom::array array = root.element;
     assert(*iterator != array.end());
-    JNTDecoder nextDecoder = JNTCreateDecoder(**iterator, prevDecoder.context);
     ++(*iterator);
-    return nextDecoder;
+}
+
+JNTDecoder JNTDecoderFromIterator(JNTIterator *iterator, JNTDecoder root) {
+    return JNTCreateDecoder(**iterator, root.context);
 }
 
 bool JNTDocumentDecodeNil(JNTDecoder decoder) {
@@ -460,6 +463,7 @@ JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key) {
     auto child = decoder.element.at_key(key);
     if (child.error()) {
         JNTHandleMemberDoesNotExist(decoder, key);
+        return decoder;
     }
     return JNTCreateDecoder(child.value(), decoder.context);
 }
@@ -521,6 +525,16 @@ const char *JNTDocumentDecode__DecimalString(JNTDecoder decoder, int32_t *outLen
 
 #define DECODE_NAMED(A, B, C) \
 A JNTDocumentDecode__##C(JNTDecoder decoder) { \
-    return JNTDocumentDecode<A, B>(decoder); \
+    return JNTDocumentDecode<A, B>(decoder, decoder.element); \
 }
+
 ENUMERATE(DECODE);
+
+#define DECODE_ITER(A, B) DECODE_ITER_NAMED(A, B, A)
+
+#define DECODE_ITER_NAMED(A, B, C) \
+A JNTDocumentDecodeIter__##C(JNTDecoder decoder, JNTIterator iterator) { \
+    return JNTDocumentDecode<A, B>(decoder, *iterator); \
+}
+
+ENUMERATE(DECODE_ITER);
