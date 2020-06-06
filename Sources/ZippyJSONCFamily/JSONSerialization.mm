@@ -317,10 +317,28 @@ bool JNTDocumentContains(JNTDecoder decoder, const char *key) {
     return decoder.element.at_key(key).error() == SUCCESS;
 }
 
+static double JNTNumericValue(dom::element &element) {
+    if (element.is<double>()) {
+        return element.get<double>().value();
+    } else if (element.is<int64_t>()) {
+        return element.get<int64_t>().value();
+    } else if (element.is<uint64_t>()) {
+        return element.get<uint64_t>().value();
+    }
+    return 0;
+}
+
 template <typename T, typename U>
 inline T JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
     simdjson_result<U> value = element.get<U>();
-    if (value.error()) {
+    if (unlikely(value.error())) {
+        BOOL elementIsNumeric = element.is<double>() || element.is<int64_t>() || element.is<uint64_t>();
+        if (std::is_integral<T>() && std::is_integral<U>() && elementIsNumeric) {
+            // If we asked for a number type, and simdjson complained strictly because it had a number of a type that
+            // couldn't be losslessly casted to the one we asked for, then the error is that the number doesn't fit
+            JNTHandleNumberDoesNotFit(decoder, JNTNumericValue(element), typeid(T).name());
+            return (T)0;
+        }
         JNTHandleWrongType(decoder, element.type(), typeid(T).name());
         return (T)0;
     }
