@@ -56,7 +56,7 @@ bool JNTDocumentErrorDidOccur(JNTDecoder decoder);
 bool JNTDocumentValueIsInteger(JNTDecoder decoder);
 bool JNTDocumentValueIsDouble(JNTDecoder decoder);
 bool JNTHasVectorExtensions();
-ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString);
+ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString, BOOL stringsForFloats);
 JNTDecoder JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool *success);
 bool JNTDocumentContains(JNTDecoder iterator, const char *key);
 void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, JNTDecoder value, const char *key));

@@ -36,11 +36,6 @@ struct JNTContext;
 struct JNTDecoder {
     dom::element element;
     JNTContext *context;
-    JNTDecoder() {
-        dom::element defaultElement;
-        element = defaultElement;
-        context = NULL;
-    }
 };
 
 struct JNTDecodingError {
@@ -64,14 +59,17 @@ public:
     std::string posInfString;
     std::string negInfString;
     std::string nanString;
+    BOOL stringsForFloats;
 
     const char *originalString;
     uint32_t originalStringLength;
 
-    JNTContext(const char *originalString, uint32_t originalStringLength, std::string posInfString, std::string negInfString, std::string nanString) : originalString(originalString), originalStringLength(originalStringLength), posInfString(posInfString), negInfString(negInfString), nanString(nanString) {
+    JNTContext(const char *originalString, uint32_t originalStringLength, std::string posInfString, std::string negInfString, std::string nanString, BOOL stringsForFloats) : originalString(originalString), originalStringLength(originalStringLength), posInfString(posInfString), negInfString(negInfString), nanString(nanString), stringsForFloats(stringsForFloats) {
     }
 };
 
+static_assert(alignof(JNTDecoder) == alignof(JNTDecoderStorage), "");
+static_assert(alignof(JNTDecoder[2]) == alignof(JNTDecoderStorage[2]), "");
 static_assert(sizeof(JNTDecoder) == sizeof(JNTDecoderStorage), "");
 static_assert(sizeof(JNTDecoder[2]) == sizeof(JNTDecoderStorage[2]), "");
 static_assert(std::is_trivially_copyable<JNTDecoder>(), "");
@@ -83,6 +81,11 @@ static inline JNTDecoder JNTCreateDecoder(dom::element element, JNTContext *cont
     decoder.element = element;
     decoder.context = context;
     return decoder;
+}
+
+static inline JNTDecoder JNTDecoderDefault() {
+    dom::element defaultElement;
+    return JNTCreateDecoder(defaultElement, NULL);
 }
 
 // Pre-condition: decoder is known to be an array
@@ -274,8 +277,8 @@ static inline bool JNTCheck(dom::element &element) {
     return (JNTCheckHelper(element) & 0x80) != '\0';
 }
 
-ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString) {
-    return new JNTContext(originalString, originalStringLength, std::string(posInfString), std::string(negInfString), std::string(nanString));
+ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString, BOOL stringsForFloats) {
+    return new JNTContext(originalString, originalStringLength, std::string(posInfString), std::string(negInfString), std::string(nanString), stringsForFloats);
 }
 
 static const uint64_t kDataLimit = (1ULL << 32) - 1;
@@ -284,21 +287,18 @@ JNTDecoder JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteg
     *success = false;
     if (length > kDataLimit) {
         *retryReason = "The length of the JSON data is too long (see kDataLimit for the max)";
+        return JNTDecoderDefault();
     }
     simdjson::padded_string ps = simdjson::padded_string((char *)data, length);
     auto result = context->parser.parse(ps);
     if (result.error()) {
-        if (result.error() != NUMBER_ERROR) { // retry number errors
-            JNTHandleJSONParsingFailed(result.error(), context);
-        } else {
-            *retryReason = "Either the JSON is malformed, e.g. passing a number as the root object, or an integer was too large (couldn't fit in a 64-bit unsigned integer)";
-        }
-        return (JNTDecoder){};
+        *retryReason = "Either the JSON is malformed, e.g. passing a number as the root object, or an integer was too large (couldn't fit in a 64-bit unsigned integer)";
+        return JNTDecoderDefault();
     }
     context->root = result.value();
     if (JNTCheck(context->root)) {
         *retryReason = "One or more keys had non-ASCII characters";
-        return (JNTDecoder){};
+        return JNTDecoderDefault();
     } else {
         *success = true;
         JNTDecoder decoder;
@@ -318,21 +318,27 @@ bool JNTDocumentContains(JNTDecoder decoder, const char *key) {
 }
 
 template <typename T, typename U>
-static inline T JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
+inline T JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
     simdjson_result<U> value = element.get<U>();
     if (value.error()) {
         JNTHandleWrongType(decoder, element.type(), typeid(T).name());
         return (T)0;
     }
-    return (T)value.value();
+    U trueValue = value.value();
+    T returnValue = (T)trueValue;
+    if (trueValue != returnValue) {
+        JNTHandleNumberDoesNotFit(decoder, trueValue, typeid(T).name());
+        return 0;
+    }
+    return returnValue;
 }
 
-template <typename U = double>
-inline double JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
+template <>
+inline double JNTDocumentDecode<double, double>(JNTDecoder decoder, dom::element element) {
     if (element.is<double>()) {
         return element;
     } else {
-        if (element.is<std::string_view>()) {
+        if (element.is<std::string_view>() && decoder.context->stringsForFloats) {
             std::string_view string = element;
             if (string == decoder.context->posInfString) {
                 return INFINITY;
@@ -347,8 +353,8 @@ inline double JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
     }
 }
 
-template <typename U = double>
-inline float JNTDocumentDecode(JNTDecoder decoder, dom::element element) {
+template <>
+inline float JNTDocumentDecode<float, double>(JNTDecoder decoder, dom::element element) {
     return (float)JNTDocumentDecode<double, double>(decoder, element);
 }
 
@@ -369,6 +375,8 @@ void JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder root) {
 }
 
 JNTDecoder JNTDecoderFromIterator(JNTIterator *iterator, JNTDecoder root) {
+    dom::array array = root.element;
+    assert(*iterator != array.end());
     return JNTCreateDecoder(**iterator, root.context);
 }
 
@@ -431,9 +439,8 @@ NSArray <id> *JNTDocumentCodingPath(JNTDecoder targetDecoder) {
     if (JNTIteratorsEqual(element, targetDecoder.element)) {
         return @[];
     }
-    //NSMutableArray *array = JNTDocumentCodingPathHelper(element, &targetDecoder->element);
-    //return array ? [array copy] : @[];
-    return @[];
+    NSMutableArray *array = JNTDocumentCodingPathHelper(element, targetDecoder.element);
+    return array ? [array copy] : @[];
 }
 
 NSArray <NSString *> *JNTDocumentAllKeys(JNTDecoder decoder) {
@@ -447,16 +454,15 @@ NSArray <NSString *> *JNTDocumentAllKeys(JNTDecoder decoder) {
 }
 
 void JNTDocumentForAllKeyValuePairs(JNTDecoder decoderOriginal, void (^callback)(const char *key, JNTDecoder element)) {
-    return;
-    // todo: Make a copy of the iterator?
-    /*const auto &object = decoderOriginal->element.get<dom::object>();
+    const auto &object = decoderOriginal.element.get<dom::object>();
     if (object.error()) {
-        JNTHandleWrongType(decoderOriginal, decoderOriginal->element.type(), "dictionary");
+        JNTHandleWrongType(decoderOriginal, decoderOriginal.element.type(), "dictionary");
         return;
     }
     for (auto [key, value] : object) {
-        callback(key.data(), value);
-    }*/
+        JNTDecoder decoder = JNTCreateDecoder(value, decoderOriginal.context);
+        callback(key.data(), decoder);
+    }
 }
 
 JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key) {
@@ -501,9 +507,8 @@ ContextPointer JNTGetContext(JNTDecoder decoder) {
 }
 
 const char *JNTDocumentDecode__DecimalString(JNTDecoder decoder, int32_t *outLength) {
-    *outLength = 0; // Make sure it doesn't get left uninitialized
+    *outLength = 0; // Making sure it doesn't get left uninitialized
     // todo: use uint64_t everywhere here if we ever support > 4GB files
-    //uint32_t location = (uint32_t)decoder.element.tape;
     uint64_t offset = decoder.context->parser.offset_for_element(decoder.element);
     const char *dataStart = decoder.context->originalString;
     const char *dataEnd = dataStart + decoder.context->originalStringLength;
