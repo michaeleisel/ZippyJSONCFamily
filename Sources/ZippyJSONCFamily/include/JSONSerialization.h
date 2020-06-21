@@ -38,18 +38,20 @@ struct JNTDecoderStorage {
 
 #ifdef __cplusplus
 struct JNTDecoder;
-typedef simdjson::dom::array::iterator JNTIterator;
+typedef simdjson::dom::array::iterator JNTArrayIterator;
+typedef simdjson::dom::object::iterator JNTDictionaryIterator;
 #else
 typedef struct JNTDecoderStorage JNTDecoder;
-typedef struct JNTElementStorage JNTIterator;
+typedef struct JNTElementStorage JNTArrayIterator;
+typedef struct JNTElementStorage JNTDictionaryIterator;
 #endif
 
 //typedef JNTDecoder Decoder;
 typedef JNTDecoder *DecoderPointer;
 
-JNTDecoder JNTDecoderFromIterator(JNTIterator *iterator, JNTDecoder root);
-JNTIterator JNTDocumentGetIterator(JNTDecoder decoder);
-bool JNTDocumentIsEmpty(DecoderPointer decoder);
+JNTDecoder JNTDecoderFromIterator(JNTArrayIterator *iterator, JNTDecoder root);
+JNTArrayIterator JNTDocumentGetIterator(JNTDecoder decoder);
+JNTDictionaryIterator JNTDocumentGetDictionaryIterator(JNTDecoder decoder);
 void JNTClearError(ContextPointer context);
 ContextPointer JNTGetContext(JNTDecoder decoder);
 bool JNTDocumentErrorDidOccur(JNTDecoder decoder);
@@ -58,10 +60,10 @@ bool JNTDocumentValueIsDouble(JNTDecoder decoder);
 bool JNTHasVectorExtensions();
 ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString, BOOL stringsForFloats);
 JNTDecoder JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool *success);
-bool JNTDocumentContains(JNTDecoder iterator, const char *key);
+bool JNTDocumentContains(JNTDecoder decoder, const char *key, JNTDictionaryIterator *iteratorPtr);
 void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, JNTDecoder value, const char *key));
 bool JNTErrorDidOccur(ContextPointer context);
-JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key);
+JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key, JNTDictionaryIterator *iteratorPtr);
 bool JNTDocumentDecodeNil(JNTDecoder documentPtr);
 void JNTReleaseContext(ContextPointer context);
 void JNTUpdateFloatingPointStrings(const char *posInfString, const char *negInfString, const char *nanString);
@@ -71,7 +73,7 @@ NSArray <NSString *> *JNTDocumentAllKeys(JNTDecoder decoder);
 NSArray <id> *JNTDocumentCodingPath(JNTDecoder iterator);
 void JNTDocumentForAllKeyValuePairs(JNTDecoder iterator, void (^callback)(const char *key, JNTDecoder iterator));
 void JNTConvertSnakeToCamel(JNTDecoder iterator);
-void JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder root);
+void JNTAdvanceIterator(JNTArrayIterator *iterator, JNTDecoder root);
 
 double JNTDocumentDecode__Double(JNTDecoder value);
 float JNTDocumentDecode__Float(JNTDecoder value);
@@ -106,9 +108,6 @@ A JNTDocumentDecode__##C(JNTDecoder value);
 
 #define DECODE_ITER_HEADER(A, B) DECODE_ITER_HEADER_NAMED(A, B, A)
 
-#define DECODE_ITER_HEADER_NAMED(A, B, C) \
-A JNTDocumentDecodeIter__##C(JNTDecoder value, JNTIterator iterator);
-
 #define ENUMERATE(F) \
 F(int8_t, int64_t); \
 F(uint8_t, int64_t); \
@@ -126,6 +125,5 @@ F##_NAMED(double, double, Double); \
 F##_NAMED(float, double, Float);
 
 ENUMERATE(DECODE_HEADER);
-ENUMERATE(DECODE_ITER_HEADER);
 
 CF_EXTERN_C_END

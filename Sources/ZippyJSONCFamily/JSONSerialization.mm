@@ -68,13 +68,19 @@ public:
     }
 };
 
+static_assert(sizeof(JNTDecoder[2]) == sizeof(JNTDecoderStorage[2]), "");
+static_assert(sizeof(JNTElementStorage) == sizeof(dom::object::iterator), "");
+static_assert(sizeof(JNTElementStorage) == sizeof(dom::array::iterator), "");
+static_assert(sizeof(JNTElementStorage[2]) == sizeof(dom::array::iterator[2]), "");
 static_assert(alignof(JNTDecoder) == alignof(JNTDecoderStorage), "");
 static_assert(alignof(JNTDecoder[2]) == alignof(JNTDecoderStorage[2]), "");
-static_assert(sizeof(JNTDecoder) == sizeof(JNTDecoderStorage), "");
-static_assert(sizeof(JNTDecoder[2]) == sizeof(JNTDecoderStorage[2]), "");
+static_assert(alignof(JNTElementStorage) == alignof(dom::object::iterator), "");
+static_assert(alignof(JNTElementStorage) == alignof(dom::array::iterator), "");
+static_assert(alignof(JNTElementStorage[2]) == alignof(dom::array::iterator[2]), "");
 static_assert(std::is_trivially_copyable<JNTDecoder>(), "");
 static_assert(std::is_trivially_copyable<dom::element>(), "");
 static_assert(std::is_trivially_copyable<dom::array::iterator>());
+static_assert(std::is_trivially_copyable<dom::object::iterator>());
 
 static inline JNTDecoder JNTCreateDecoder(dom::element element, JNTContext *context) {
     JNTDecoder decoder;
@@ -88,12 +94,6 @@ static inline JNTDecoder JNTDecoderDefault() {
     return JNTCreateDecoder(defaultElement, NULL);
 }
 
-// Pre-condition: decoder is known to be an array
-bool JNTDocumentIsEmpty(DecoderPointer decoder) {
-    dom::array array = decoder->element;
-    return !(array.begin() != array.end());
-}
-
 void JNTClearError(ContextPointer context) {
     context->error = JNTDecodingError();
 }
@@ -104,10 +104,6 @@ bool JNTErrorDidOccur(ContextPointer context) {
 
 bool JNTDocumentErrorDidOccur(JNTDecoder decoder) {
     return JNTErrorDidOccur(decoder.context);
-}
-
-ContextPointer JNTGetContext(DecoderPointer decoder) {
-    return decoder->context;
 }
 
 void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, JNTDecoder value, const char *key)) {
@@ -141,12 +137,6 @@ static inline void JNTSetError(std::string description, JNTDecodingErrorType typ
         return;
     }
     context->error = JNTDecodingError(description, type, value, key);
-}
-
-static void JNTHandleJSONParsingFailed(error_code code, JNTContext *context) {
-    std::ostringstream oss;
-    oss << "The given data was not valid JSON. Error: " << code;
-    JNTSetError(oss.str(), JNTDecodingErrorTypeJSONParsingFailed, context, JNTDecoder(), "");
 }
 
 static void JNTHandleWrongType(JNTDecoder decoder, dom::element_type type, const char *expectedType) {
@@ -312,11 +302,6 @@ void JNTReleaseContext(JNTContext *context) {
     delete context;
 }
 
-bool JNTDocumentContains(JNTDecoder decoder, const char *key) {
-    // todo: make sure all functions match their declarations
-    return decoder.element.at_key(key).error() == SUCCESS;
-}
-
 static double JNTNumericValue(dom::element &element) {
     if (element.is<double>()) {
         return element.get<double>().value();
@@ -386,13 +371,13 @@ NSInteger JNTDocumentGetArrayCount(JNTDecoder decoder) {
     return count;
 }
 
-void JNTAdvanceIterator(JNTIterator *iterator, JNTDecoder root) {
+void JNTAdvanceIterator(JNTArrayIterator *iterator, JNTDecoder root) {
     dom::array array = root.element;
     assert(*iterator != array.end());
     ++(*iterator);
 }
 
-JNTDecoder JNTDecoderFromIterator(JNTIterator *iterator, JNTDecoder root) {
+JNTDecoder JNTDecoderFromIterator(JNTArrayIterator *iterator, JNTDecoder root) {
     dom::array array = root.element;
     assert(*iterator != array.end());
     return JNTCreateDecoder(**iterator, root.context);
@@ -411,7 +396,12 @@ static bool JNTIteratorsEqual(dom::element &e1, dom::element &e2) {
     return index1 == index2;
 }
 
-JNTIterator JNTDocumentGetIterator(JNTDecoder decoder) {
+JNTDictionaryIterator JNTDocumentGetDictionaryIterator(JNTDecoder decoder) {
+    dom::object object = decoder.element;
+    return object.begin();
+}
+
+JNTArrayIterator JNTDocumentGetIterator(JNTDecoder decoder) {
     dom::array array = decoder.element;
     return array.begin();
 }
@@ -483,13 +473,52 @@ void JNTDocumentForAllKeyValuePairs(JNTDecoder decoderOriginal, void (^callback)
     }
 }
 
-JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key) {
-    auto child = decoder.element.at_key(key);
-    if (child.error()) {
+simdjson_result<dom::element> JNTDocumentFindValue(JNTDecoder decoder, const char *cKey, JNTDictionaryIterator *iteratorPtr) {
+    auto iterator = *iteratorPtr;
+    std::string_view key = cKey;
+    const auto searchStart = iterator;
+    const dom::object &object = decoder.element;
+    const auto &end = object.end();
+    dom::element child;
+    bool found = false;
+    while (iterator != end) {
+        if (key == iterator.key()) {
+            child = iterator.value();
+            found = true;
+            break;
+        }
+        ++iterator;
+    }
+    if (!found) {
+        iterator = object.begin();
+        while (iterator != searchStart) {
+            if (key == iterator.key()) {
+                child = iterator.value();
+                found = true;
+                break;
+            }
+            ++iterator;
+        }
+    }
+    if (!found) {
+        return simdjson_result<dom::element>(NO_SUCH_FIELD);
+    }
+    *iteratorPtr = iterator;
+    return simdjson_result<dom::element>(std::move(child));
+}
+
+bool JNTDocumentContains(JNTDecoder decoder, const char *key, JNTDictionaryIterator *iteratorPtr) {
+    const auto &result = JNTDocumentFindValue(decoder, key, iteratorPtr);
+    return result.error() == SUCCESS;
+}
+
+JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key, JNTDictionaryIterator *iteratorPtr) {
+    const auto &result = JNTDocumentFindValue(decoder, key, iteratorPtr);
+    if (result.error() != SUCCESS) {
         JNTHandleMemberDoesNotExist(decoder, key);
         return decoder;
     }
-    return JNTCreateDecoder(child.value(), decoder.context);
+    return JNTCreateDecoder(result.first, decoder.context);
 }
 
 bool JNTDocumentValueIsDictionary(JNTDecoder decoder) {
@@ -498,14 +527,6 @@ bool JNTDocumentValueIsDictionary(JNTDecoder decoder) {
 
 bool JNTDocumentValueIsArray(JNTDecoder decoder) {
     return decoder.element.is<dom::array>();
-}
-
-bool JNTDocumentValueIsU64(JNTDecoder decoder) {
-    return decoder.element.is<uint64_t>();
-}
-
-bool JNTDocumentValueIsI64(JNTDecoder decoder) {
-    return decoder.element.is<int64_t>();
 }
 
 bool JNTDocumentValueIsInteger(JNTDecoder decoder) {
@@ -552,12 +573,3 @@ A JNTDocumentDecode__##C(JNTDecoder decoder) { \
 }
 
 ENUMERATE(DECODE);
-
-#define DECODE_ITER(A, B) DECODE_ITER_NAMED(A, B, A)
-
-#define DECODE_ITER_NAMED(A, B, C) \
-A JNTDocumentDecodeIter__##C(JNTDecoder decoder, JNTIterator iterator) { \
-    return JNTDocumentDecode<A, B>(decoder, *iterator); \
-}
-
-ENUMERATE(DECODE_ITER);
