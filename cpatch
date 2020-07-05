@@ -1,0 +1,18 @@
+commit 95d789c181f653f12dc3dc0ab7efe59b155d9a7e
+Author: Michael Eisel <meisel@spotify.com>
+Date:   Sun May 10 21:55:45 2020 -0400
+
+    commit
+
+diff --git a/Sources/ZippyJSONCFamily/simdjson.cpp b/Sources/ZippyJSONCFamily/simdjson.cpp
+index 51772ea..dfc5ecb 100644
+--- a/Sources/ZippyJSONCFamily/simdjson.cpp
++++ b/Sources/ZippyJSONCFamily/simdjson.cpp
+@@ -10742,6 +10742,7 @@ struct structural_parser {
+   }
+ 
+   WARN_UNUSED really_inline bool parse_number(const uint8_t *src, bool found_minus) {
++      doc_parser.add_number_pair(doc_parser.current_loc, src);
+     return !numberparsing::parse_number(src, found_minus, doc_parser);
+   }
+   WARN_UNUSED really_inline bool parse_number(bool found_minus) {
