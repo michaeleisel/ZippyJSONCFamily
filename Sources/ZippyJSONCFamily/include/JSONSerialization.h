@@ -33,6 +33,7 @@ struct JNTContext;
 struct JNTDecoderStorage {
     struct JNTElementStorage storage;
     struct JNTContext *context;
+    size_t depth;
 };
 
 #ifdef __cplusplus
@@ -82,7 +83,6 @@ void *JNTDocumentDecode__Data(JNTDecoder value, int32_t *outLength);
 void JNTRunTests();
 bool JNTDocumentValueIsNumber(JNTDecoder value);
 const char *JNTDocumentDecode__DecimalString(JNTDecoder value, int32_t *outLength);
-// void JNTReleaseValue(DecoderPointer decoder);
 JNTDecoder JNTDocumentCreateCopy(JNTDecoder decoder);
 
 NSInteger JNTDocumentGetArrayCount(JNTDecoder value);

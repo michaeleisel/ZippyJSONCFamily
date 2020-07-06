@@ -36,6 +36,7 @@ struct JNTContext;
 struct JNTDecoder {
     dom::element element;
     JNTContext *context;
+    size_t depth;
 };
 
 struct JNTDecodingError {
@@ -82,16 +83,17 @@ static_assert(std::is_trivially_copyable<dom::element>(), "");
 static_assert(std::is_trivially_copyable<dom::array::iterator>());
 static_assert(std::is_trivially_copyable<dom::object::iterator>());
 
-static inline JNTDecoder JNTCreateDecoder(dom::element element, JNTContext *context) {
+static inline JNTDecoder JNTCreateDecoder(dom::element element, JNTContext *context, size_t depth) {
     JNTDecoder decoder;
     decoder.element = element;
     decoder.context = context;
+    decoder.depth = depth;
     return decoder;
 }
 
 static inline JNTDecoder JNTDecoderDefault() {
     dom::element defaultElement;
-    return JNTCreateDecoder(defaultElement, NULL);
+    return JNTCreateDecoder(defaultElement, NULL, 0);
 }
 
 void JNTClearError(ContextPointer context) {
@@ -380,7 +382,7 @@ void JNTAdvanceIterator(JNTArrayIterator *iterator, JNTDecoder root) {
 JNTDecoder JNTDecoderFromIterator(JNTArrayIterator *iterator, JNTDecoder root) {
     dom::array array = root.element;
     assert(*iterator != array.end());
-    return JNTCreateDecoder(**iterator, root.context);
+    return JNTCreateDecoder(**iterator, root.context, root.depth + 1);
 }
 
 bool JNTDocumentDecodeNil(JNTDecoder decoder) {
@@ -468,7 +470,7 @@ void JNTDocumentForAllKeyValuePairs(JNTDecoder decoderOriginal, void (^callback)
         return;
     }
     for (auto [key, value] : object) {
-        JNTDecoder decoder = JNTCreateDecoder(value, decoderOriginal.context);
+        JNTDecoder decoder = JNTCreateDecoder(value, decoderOriginal.context, decoderOriginal.depth + 1);
         callback(key.data(), decoder);
     }
 }
@@ -522,7 +524,7 @@ JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key, JNTDiction
         JNTHandleMemberDoesNotExist(decoder, key);
         return decoder;
     }
-    return JNTCreateDecoder(result.first, decoder.context);
+    return JNTCreateDecoder(result.first, decoder.context, decoder.depth + 1);
 }
 
 bool JNTDocumentValueIsDictionary(JNTDecoder decoder) {
