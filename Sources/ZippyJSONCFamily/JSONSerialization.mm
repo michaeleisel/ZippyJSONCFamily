@@ -473,8 +473,8 @@ void JNTDocumentForAllKeyValuePairs(JNTDecoder decoderOriginal, void (^callback)
     }
 }
 
-const char *JNTDocumentKeyFromIterator(JNTDictionaryIterator *iterator) {
-    return (*iterator).key_c_str();
+const char *JNTDocumentKeyFromIterator(JNTDictionaryIterator iterator) {
+    return iterator.key_c_str();
 }
 
 simdjson_result<dom::element> JNTDocumentFindValue(JNTDecoder decoder, const char *cKey, JNTDictionaryIterator *iteratorPtr) {

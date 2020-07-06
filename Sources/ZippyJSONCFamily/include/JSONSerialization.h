@@ -1,5 +1,4 @@
-//Copyright (c) 2018 Michael Eisel. All rights reserved.
-
+//Copyright (c) 2018 Michael Eisel. All rights reserved. 
 #import <Foundation/Foundation.h>
 
 CF_EXTERN_C_BEGIN
@@ -49,7 +48,7 @@ typedef struct JNTElementStorage JNTDictionaryIterator;
 //typedef JNTDecoder Decoder;
 typedef JNTDecoder *DecoderPointer;
 
-const char *JNTDocumentKeyFromIterator(JNTDictionaryIterator *iterator);
+const char *JNTDocumentKeyFromIterator(JNTDictionaryIterator iterator);
 JNTDecoder JNTDecoderFromIterator(JNTArrayIterator *iterator, JNTDecoder root);
 JNTArrayIterator JNTDocumentGetIterator(JNTDecoder decoder);
 JNTDictionaryIterator JNTDocumentGetDictionaryIterator(JNTDecoder decoder);
