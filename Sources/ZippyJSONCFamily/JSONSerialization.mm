@@ -39,10 +39,23 @@ struct JNTDecoder {
     size_t depth;
 };
 
+static inline JNTDecoder JNTCreateDecoder(dom::element element, JNTContext *context, size_t depth) {
+    JNTDecoder decoder;
+    decoder.element = element;
+    decoder.context = context;
+    decoder.depth = depth;
+    return decoder;
+}
+
+static inline JNTDecoder JNTDecoderDefault() {
+    dom::element defaultElement;
+    return JNTCreateDecoder(defaultElement, NULL, 0);
+}
+
 struct JNTDecodingError {
     std::string description = "";
     JNTDecodingErrorType type = JNTDecodingErrorTypeNone;
-    JNTDecoder value = JNTDecoder();
+    JNTDecoder value = JNTDecoderDefault();
     std::string key = "";
     JNTDecodingError() {
     }
@@ -82,19 +95,6 @@ static_assert(std::is_trivially_copyable<JNTDecoder>(), "");
 static_assert(std::is_trivially_copyable<dom::element>(), "");
 static_assert(std::is_trivially_copyable<dom::array::iterator>());
 static_assert(std::is_trivially_copyable<dom::object::iterator>());
-
-static inline JNTDecoder JNTCreateDecoder(dom::element element, JNTContext *context, size_t depth) {
-    JNTDecoder decoder;
-    decoder.element = element;
-    decoder.context = context;
-    decoder.depth = depth;
-    return decoder;
-}
-
-static inline JNTDecoder JNTDecoderDefault() {
-    dom::element defaultElement;
-    return JNTCreateDecoder(defaultElement, NULL, 0);
-}
 
 void JNTClearError(ContextPointer context) {
     context->error = JNTDecodingError();
@@ -293,10 +293,7 @@ JNTDecoder JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteg
         return JNTDecoderDefault();
     } else {
         *success = true;
-        JNTDecoder decoder;
-        decoder.element = context->root;
-        decoder.context = context;
-        return decoder;
+        return JNTCreateDecoder(context->root, context, 0);
     }
 }
 
@@ -549,6 +546,10 @@ bool JNTIsNumericCharacter(char c) {
 
 ContextPointer JNTGetContext(JNTDecoder decoder) {
     return decoder.context;
+}
+
+size_t JNTGetDepth(JNTDecoder decoder) {
+    return decoder.depth;
 }
 
 const char *JNTDocumentDecode__DecimalString(JNTDecoder decoder, int32_t *outLength) {

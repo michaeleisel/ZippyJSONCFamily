@@ -84,6 +84,7 @@ void JNTRunTests();
 bool JNTDocumentValueIsNumber(JNTDecoder value);
 const char *JNTDocumentDecode__DecimalString(JNTDecoder value, int32_t *outLength);
 JNTDecoder JNTDocumentCreateCopy(JNTDecoder decoder);
+size_t JNTGetDepth(JNTDecoder value);
 
 NSInteger JNTDocumentGetArrayCount(JNTDecoder value);
 
