@@ -26,6 +26,7 @@ This is a library meant only to support ZippyJSON and provide a workaround for a
   s.source           = { :git => 'https://github.com/michaeleisel/ZippyJSONCFamily.git', :tag => s.version.to_s }
 
   s.ios.deployment_target = '11.0'
+  s.tvos.deployment_target = '11.0'
   s.osx.deployment_target = '10.13'
   s.library = 'c++'
   s.pod_target_xcconfig = {
