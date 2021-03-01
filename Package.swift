@@ -6,6 +6,8 @@ let package = Package(
     name: "ZippyJSONCFamily",
     platforms: [
         .iOS(.v11),
+        .tvOS(.v10),
+        .macOS(.v10_12),
     ],
     products: [
         .library(
