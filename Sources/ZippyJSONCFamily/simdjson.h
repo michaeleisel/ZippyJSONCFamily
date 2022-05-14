@@ -1355,14 +1355,16 @@ public:
 
   std::unordered_map<uint64_t, uint64_t> tape_loc_to_offset;
   bool has_assembled_hash = false;
-    really_inline uint64_t offset_for_element(dom::element element) {
+    really_inline uint64_t offset_for_element(dom::element element, bool *success) {
         assemble_hash_if_necessary();
         auto ref = (simdjson::internal::tape_ref *)&element;
         uint64_t tape_loc = ref->json_index;
         auto iter = tape_loc_to_offset.find(tape_loc);
         if (iter == tape_loc_to_offset.end()) {
-            return NULL;
+            *success = false;
+            return 0;
         }
+        *success = true;
         return iter->second;
     }
 

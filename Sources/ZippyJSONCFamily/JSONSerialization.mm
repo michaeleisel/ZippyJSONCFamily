@@ -557,7 +557,11 @@ size_t JNTGetDepth(JNTDecoder decoder) {
 const char *JNTDocumentDecode__DecimalString(JNTDecoder decoder, int32_t *outLength) {
     *outLength = 0; // Making sure it doesn't get left uninitialized
     // todo: use uint64_t everywhere here if we ever support > 4GB files
-    uint64_t offset = decoder.context->parser.offset_for_element(decoder.element);
+    bool success = false;
+    uint64_t offset = decoder.context->parser.offset_for_element(decoder.element, &success);
+    if (!success) {
+        return NULL;
+    }
     const char *dataStart = decoder.context->originalString;
     const char *dataEnd = dataStart + decoder.context->originalStringLength;
     const char *string = dataStart + offset;
@@ -8390,6 +8394,7 @@ struct structural_parser {
   }
 
   WARN_UNUSED really_inline bool parse_number(const uint8_t *src, bool found_minus) {
+    doc_parser.add_number_pair(doc_parser.current_loc, src);
     return !numberparsing::parse_number(src, found_minus, doc_parser);
   }
   WARN_UNUSED really_inline bool parse_number(bool found_minus) {
@@ -9878,6 +9883,7 @@ struct structural_parser {
   }
 
   WARN_UNUSED really_inline bool parse_number(const uint8_t *src, bool found_minus) {
+    doc_parser.add_number_pair(doc_parser.current_loc, src);
     return !numberparsing::parse_number(src, found_minus, doc_parser);
   }
   WARN_UNUSED really_inline bool parse_number(bool found_minus) {
@@ -12791,6 +12797,7 @@ struct structural_parser {
   }
 
   WARN_UNUSED really_inline bool parse_number(const uint8_t *src, bool found_minus) {
+    doc_parser.add_number_pair(doc_parser.current_loc, src);
     return !numberparsing::parse_number(src, found_minus, doc_parser);
   }
   WARN_UNUSED really_inline bool parse_number(bool found_minus) {
