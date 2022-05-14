@@ -26,6 +26,8 @@ static inline char JNTStringPop(char **string) {
 bool JNTHasVectorExtensions() {
 #ifdef __SSE4_2__
   return true;
+#elif defined(__arm64__)
+  return true;
 #else
   return false;
 #endif
