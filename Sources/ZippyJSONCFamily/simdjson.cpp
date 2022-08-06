@@ -8777,6 +8777,9 @@ simdjson_warn_unused simdjson_inline error_code tape_builder::visit_root_string(
 
 simdjson_warn_unused simdjson_inline error_code tape_builder::visit_number(json_iterator &iter, const uint8_t *value) noexcept {
   iter.log_value("number");
+    // Create an std::unordered_map on tape_builder, tapeLocToLoc, then expose it, then in
+    // tape_builder::parse_document, have doc get the std::move of that, then from within an
+    // element, there's the .tape element which has a pointer to doc and the json_index
   return numberparsing::parse_number(value, tape);
 }
 

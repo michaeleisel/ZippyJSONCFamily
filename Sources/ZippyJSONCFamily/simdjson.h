@@ -11223,6 +11223,7 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 template<typename W>
 simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
+    abort();
   //
   // Check for minus sign
   //
@@ -12922,6 +12923,7 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 template<typename W>
 simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
+    abort();
   //
   // Check for minus sign
   //
@@ -15118,6 +15120,7 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 template<typename W>
 simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
+    abort();
   //
   // Check for minus sign
   //
@@ -17301,6 +17304,7 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 template<typename W>
 simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
+    abort();
   //
   // Check for minus sign
   //
@@ -19594,6 +19598,7 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 template<typename W>
 simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
+    abort();
   //
   // Check for minus sign
   //
@@ -21735,6 +21740,7 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 template<typename W>
 simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
+    abort();
   //
   // Check for minus sign
   //
