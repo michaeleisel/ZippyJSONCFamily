@@ -559,11 +559,7 @@ size_t JNTGetDepth(JNTDecoder decoder) {
 const char *JNTDocumentDecode__DecimalString(JNTDecoder decoder, int32_t *outLength) {
     *outLength = 0; // Making sure it doesn't get left uninitialized
     // todo: use uint64_t everywhere here if we ever support > 4GB files
-    bool success = false;
-    uint64_t offset = 0; // decoder.context->parser.offset_for_element(decoder.element, &success);
-    if (!success) {
-        return NULL;
-    }
+    uint64_t offset = decoder.element.get_location_of_number_in_json();
     const char *dataStart = decoder.context->originalString;
     const char *dataEnd = dataStart + decoder.context->originalStringLength;
     const char *string = dataStart + offset;
