@@ -589,6 +589,9 @@ A JNTDocumentDecode__##C(JNTDecoder decoder) { \
 
 ENUMERATE(DECODE);
 
+// The following code is from simdjson.cpp. It was merged into this file, however,
+// to avoid a strange linker warning - https://github.com/michaeleisel/ZippyJSON/issues/41
+
 /* auto-generated on 2022-09-19 13:00:17 -0400. Do not edit! */
 /* begin file src/simdjson.cpp */
 #include "simdjson.h"
