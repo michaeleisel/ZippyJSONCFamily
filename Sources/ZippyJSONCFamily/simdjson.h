@@ -1,4 +1,4 @@
-/* auto-generated on 2022-07-28 21:45:54 -0400. Do not edit! */
+/* auto-generated on 2022-09-19 13:00:17 -0400. Do not edit! */
 /* begin file include/simdjson.h */
 #ifndef SIMDJSON_H
 #define SIMDJSON_H
@@ -2280,7 +2280,7 @@ enum error_code {
   SUCCESS = 0,                ///< No error
   CAPACITY,                   ///< This parser can't support a document that big
   MEMALLOC,                   ///< Error allocating memory, most likely out of memory
-  TAPE_ERROR,                 ///< Something went wrong while writing to the tape (stage 2), this is a generic error
+  TAPE_ERROR,                 ///< Something went wrong, this is a generic error
   DEPTH_ERROR,                ///< Your document exceeds the user-specified depth limitation
   STRING_ERROR,               ///< Problem while parsing a string
   T_ATOM_ERROR,               ///< Problem while parsing an atom starting with the letter 't'
@@ -2307,6 +2307,7 @@ enum error_code {
   INCOMPLETE_ARRAY_OR_OBJECT, ///< The document ends early.
   SCALAR_DOCUMENT_AS_VALUE,   ///< A scalar document is treated as a value.
   OUT_OF_BOUNDS,              ///< Attempted to access location outside of document.
+  TRAILING_CONTENT,           ///< Unexpected trailing content in the JSON input
   NUM_ERROR_CODES
 };
 
@@ -3797,7 +3798,7 @@ inline char *allocate_padded_buffer(size_t length) noexcept {
 } // namespace internal
 
 
-inline padded_string::padded_string() noexcept {}
+inline padded_string::padded_string() noexcept = default;
 inline padded_string::padded_string(size_t length) noexcept
     : viable_size(length), data_ptr(internal::allocate_padded_buffer(length)) {
 }
@@ -3879,7 +3880,13 @@ inline simdjson_result<padded_string> padded_string::load(std::string_view filen
   }
 
   // Get the file size
-  if(std::fseek(fp, 0, SEEK_END) < 0) {
+  int ret;
+#if defined(SIMDJSON_VISUAL_STUDIO) && !SIMDJSON_IS_32BITS
+  ret = _fseeki64(fp, 0, SEEK_END);
+#else
+  ret = std::fseek(fp, 0, SEEK_END);
+#endif // _WIN64
+  if(ret < 0) {
     std::fclose(fp);
     return IO_ERROR;
   }
@@ -5376,6 +5383,17 @@ public:
    *          Returns INCORRECT_TYPE if the JSON element is not a number.
    */
   inline simdjson_result<double> get_double() const noexcept;
+
+  /**
+   * Gets the index in the original JSON of a number element.
+   * This can be used in conjunction with the JSON (assuming the user still has a copy of it)
+   * to get the number's string back and parse it one's self, e.g. to parse it as an arbitrary-precision number.
+   *
+   * @returns A uint32_t index value.
+   *          Returns INCORRECT_TYPE if the JSON element is not a number.
+   */
+  inline simdjson_result<uint32_t> get_location_of_number_in_json() const noexcept;
+
   /**
    * Cast this element to a bool.
    *
@@ -5758,6 +5776,7 @@ public:
   simdjson_inline simdjson_result<int64_t> get_int64() const noexcept;
   simdjson_inline simdjson_result<uint64_t> get_uint64() const noexcept;
   simdjson_inline simdjson_result<double> get_double() const noexcept;
+  simdjson_inline simdjson_result<uint32_t> get_location_of_number_in_json() const noexcept;
   simdjson_inline simdjson_result<bool> get_bool() const noexcept;
 
   simdjson_inline bool is_array() const noexcept;
@@ -7008,6 +7027,10 @@ simdjson_inline simdjson_result<double> simdjson_result<dom::element>::get_doubl
   if (error()) { return error(); }
   return first.get_double();
 }
+simdjson_inline simdjson_result<uint32_t> simdjson_result<dom::element>::get_location_of_number_in_json() const noexcept {
+  if (error()) { return error(); }
+  return first.get_location_of_number_in_json();
+}
 simdjson_inline simdjson_result<bool> simdjson_result<dom::element>::get_bool() const noexcept {
   if (error()) { return error(); }
   return first.get_bool();
@@ -7209,6 +7232,16 @@ inline simdjson_result<double> element::get_double() const noexcept {
   }
   // this is common:
   return tape.next_tape_value<double>();
+}
+inline simdjson_result<uint32_t> element::get_location_of_number_in_json() const noexcept {
+  switch (tape.tape_ref_type()) {
+    case internal::tape_type::INT64:
+    case internal::tape_type::DOUBLE:
+    case internal::tape_type::UINT64:
+      return uint32_t(tape.tape_value());
+    default:
+      return INCORRECT_TYPE;
+  }
 }
 inline simdjson_result<array> element::get_array() const noexcept {
   switch (tape.tape_ref_type()) {
@@ -8655,7 +8688,13 @@ inline simdjson_result<size_t> parser::read_file(const std::string &path) noexce
   }
 
   // Get the file size
-  if(std::fseek(fp, 0, SEEK_END) < 0) {
+  int ret;
+#if defined(SIMDJSON_VISUAL_STUDIO) && !SIMDJSON_IS_32BITS
+  ret = _fseeki64(fp, 0, SEEK_END);
+#else
+  ret = std::fseek(fp, 0, SEEK_END);
+#endif // _WIN64
+  if(ret < 0) {
     std::fclose(fp);
     return IO_ERROR;
   }
@@ -8867,16 +8906,16 @@ simdjson_inline bool tape_ref::is_document_root() const noexcept {
 // most significant 8 bits.
 
 simdjson_inline bool tape_ref::is_double() const noexcept {
-  constexpr uint64_t tape_double = uint64_t(tape_type::DOUBLE)<<56;
-  return doc->tape[json_index] == tape_double;
+  constexpr uint64_t tape_double = uint64_t(tape_type::DOUBLE);
+  return (doc->tape[json_index] >> 56) == tape_double;
 }
 simdjson_inline bool tape_ref::is_int64() const noexcept {
-  constexpr uint64_t tape_int64 = uint64_t(tape_type::INT64)<<56;
-  return doc->tape[json_index] == tape_int64;
+  constexpr uint64_t tape_int64 = uint64_t(tape_type::INT64);
+  return (doc->tape[json_index] >> 56) == tape_int64;
 }
 simdjson_inline bool tape_ref::is_uint64() const noexcept {
-  constexpr uint64_t tape_uint64 = uint64_t(tape_type::UINT64)<<56;
-  return doc->tape[json_index] == tape_uint64;
+  constexpr uint64_t tape_uint64 = uint64_t(tape_type::UINT64);
+  return (doc->tape[json_index] >> 56) == tape_uint64;
 }
 simdjson_inline bool tape_ref::is_false() const noexcept {
   constexpr uint64_t tape_false = uint64_t(tape_type::FALSE_VALUE)<<56;
@@ -10686,7 +10725,7 @@ namespace ondemand {
 /**
  * The type of a JSON number
  */
-enum class number_type {
+enum class number_type : uint8_t {
     floating_point_number=1, /// a binary64 number
     signed_integer,          /// a signed integer that fits in a 64-bit word using two's complement
     unsigned_integer         /// a positive integer larger or equal to 1<<63
@@ -10701,14 +10740,14 @@ namespace numberparsing {
 
 #ifdef JSON_TEST_NUMBERS
 #define INVALID_NUMBER(SRC) (found_invalid_number((SRC)), NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE)))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE)))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE)))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE), (INDEX)))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE), (INDEX)))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE), (INDEX)))
 #else
 #define INVALID_NUMBER(SRC) (NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (WRITER).append_s64((VALUE))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (WRITER).append_u64((VALUE))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (WRITER).append_double((VALUE))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (WRITER).append_s64((VALUE), (INDEX))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (WRITER).append_u64((VALUE), (INDEX))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (WRITER).append_double((VALUE), (INDEX))
 #endif
 
 namespace {
@@ -11029,10 +11068,10 @@ simdjson_inline bool is_made_of_eight_digits_fast(const uint8_t *chars) {
 }
 
 template<typename W>
-error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer) {
+error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer, uint32_t index) {
   double d;
   if (parse_float_fallback(src, &d)) {
-    writer.append_double(d);
+    writer.append_double(d, index);
     return SUCCESS;
   }
   return INVALID_NUMBER(src);
@@ -11139,7 +11178,7 @@ simdjson_inline size_t significant_digits(const uint8_t * start_digits, size_t d
 }
 
 template<typename W>
-simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer) {
+simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer, uint32_t index) {
   // If we frequently had to deal with long strings of digits,
   // we could extend our code by using a 128-bit integer instead
   // of a 64-bit integer. However, this is uncommon in practice.
@@ -11160,7 +11199,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // it, it would force it to be stored in memory, preventing the compiler from picking it apart
     // and putting into registers. i.e. if we pass it as reference, it gets slow.
     // This is what forces the skip_double, as well.
-    error_code error = slow_float_parsing(src, writer);
+    error_code error = slow_float_parsing(src, writer, index);
     writer.skip_double();
     return error;
   }
@@ -11175,7 +11214,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     static_assert(simdjson::internal::smallest_power <= -342, "smallest_power is not small enough");
     //
     if((exponent < simdjson::internal::smallest_power) || (i == 0)) {
-      WRITE_DOUBLE(0, src, writer);
+      WRITE_DOUBLE(0, src, writer, index);
       return SUCCESS;
     } else { // (exponent > largest_power) and (i != 0)
       // We have, for sure, an infinite value and simdjson refuses to parse infinite values.
@@ -11187,16 +11226,17 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // we are almost never going to get here.
     if (!parse_float_fallback(src, &d)) { return INVALID_NUMBER(src); }
   }
-  WRITE_DOUBLE(d, src, writer);
+  WRITE_DOUBLE(d, src, writer, index);
   return SUCCESS;
 }
 
 // for performance analysis, it is sometimes  useful to skip parsing
 #ifdef SIMDJSON_SKIPNUMBERPARSING
+  // TODO: update these
 
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const, W &writer) {
-  writer.append_s64(0);        // always write zero
+simdjson_inline error_code parse_number(const uint8_t *const, W &writer, uint32_t index) {
+  writer.append_s64(0, 0);        // always write zero
   return SUCCESS;              // always succeeds
 }
 
@@ -11221,9 +11261,8 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 //
 // Our objective is accurate parsing (ULP of 0) at high speed.
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
+simdjson_inline error_code parse_number(const uint8_t *const src, W &writer, uint32_t index) {
 
-    abort();
   //
   // Check for minus sign
   //
@@ -11261,7 +11300,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
   }
   if (is_float) {
     const bool dirty_end = jsoncharutils::is_not_structural_or_whitespace(*p);
-    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer) );
+    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer, index) );
     if (dirty_end) { return INVALID_NUMBER(src); }
     return SUCCESS;
   }
@@ -11275,7 +11314,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
     if (negative) {
       // Anything negative above INT64_MAX+1 is invalid
       if (i > uint64_t(INT64_MAX)+1) { return INVALID_NUMBER(src);  }
-      WRITE_INTEGER(~i+1, src, writer);
+      WRITE_INTEGER(~i+1, src, writer, index);
       if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
       return SUCCESS;
     // Positive overflow check:
@@ -11295,9 +11334,9 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
   // Write unsigned if it doesn't fit in a signed integer.
   if (i > uint64_t(INT64_MAX)) {
-    WRITE_UNSIGNED(i, src, writer);
+    WRITE_UNSIGNED(i, src, writer, index);
   } else {
-    WRITE_INTEGER(negative ? (~i+1) : i, src, writer);
+    WRITE_INTEGER(negative ? (~i+1) : i, src, writer, index);
   }
   if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
   return SUCCESS;
@@ -12386,7 +12425,7 @@ namespace ondemand {
 /**
  * The type of a JSON number
  */
-enum class number_type {
+enum class number_type : uint8_t {
     floating_point_number=1, /// a binary64 number
     signed_integer,          /// a signed integer that fits in a 64-bit word using two's complement
     unsigned_integer         /// a positive integer larger or equal to 1<<63
@@ -12401,14 +12440,14 @@ namespace numberparsing {
 
 #ifdef JSON_TEST_NUMBERS
 #define INVALID_NUMBER(SRC) (found_invalid_number((SRC)), NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE)))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE)))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE)))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE), (INDEX)))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE), (INDEX)))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE), (INDEX)))
 #else
 #define INVALID_NUMBER(SRC) (NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (WRITER).append_s64((VALUE))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (WRITER).append_u64((VALUE))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (WRITER).append_double((VALUE))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (WRITER).append_s64((VALUE), (INDEX))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (WRITER).append_u64((VALUE), (INDEX))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (WRITER).append_double((VALUE), (INDEX))
 #endif
 
 namespace {
@@ -12729,10 +12768,10 @@ simdjson_inline bool is_made_of_eight_digits_fast(const uint8_t *chars) {
 }
 
 template<typename W>
-error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer) {
+error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer, uint32_t index) {
   double d;
   if (parse_float_fallback(src, &d)) {
-    writer.append_double(d);
+    writer.append_double(d, index);
     return SUCCESS;
   }
   return INVALID_NUMBER(src);
@@ -12839,7 +12878,7 @@ simdjson_inline size_t significant_digits(const uint8_t * start_digits, size_t d
 }
 
 template<typename W>
-simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer) {
+simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer, uint32_t index) {
   // If we frequently had to deal with long strings of digits,
   // we could extend our code by using a 128-bit integer instead
   // of a 64-bit integer. However, this is uncommon in practice.
@@ -12860,7 +12899,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // it, it would force it to be stored in memory, preventing the compiler from picking it apart
     // and putting into registers. i.e. if we pass it as reference, it gets slow.
     // This is what forces the skip_double, as well.
-    error_code error = slow_float_parsing(src, writer);
+    error_code error = slow_float_parsing(src, writer, index);
     writer.skip_double();
     return error;
   }
@@ -12875,7 +12914,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     static_assert(simdjson::internal::smallest_power <= -342, "smallest_power is not small enough");
     //
     if((exponent < simdjson::internal::smallest_power) || (i == 0)) {
-      WRITE_DOUBLE(0, src, writer);
+      WRITE_DOUBLE(0, src, writer, index);
       return SUCCESS;
     } else { // (exponent > largest_power) and (i != 0)
       // We have, for sure, an infinite value and simdjson refuses to parse infinite values.
@@ -12887,16 +12926,17 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // we are almost never going to get here.
     if (!parse_float_fallback(src, &d)) { return INVALID_NUMBER(src); }
   }
-  WRITE_DOUBLE(d, src, writer);
+  WRITE_DOUBLE(d, src, writer, index);
   return SUCCESS;
 }
 
 // for performance analysis, it is sometimes  useful to skip parsing
 #ifdef SIMDJSON_SKIPNUMBERPARSING
+  // TODO: update these
 
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const, W &writer) {
-  writer.append_s64(0);        // always write zero
+simdjson_inline error_code parse_number(const uint8_t *const, W &writer, uint32_t index) {
+  writer.append_s64(0, 0);        // always write zero
   return SUCCESS;              // always succeeds
 }
 
@@ -12921,9 +12961,8 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 //
 // Our objective is accurate parsing (ULP of 0) at high speed.
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
+simdjson_inline error_code parse_number(const uint8_t *const src, W &writer, uint32_t index) {
 
-    abort();
   //
   // Check for minus sign
   //
@@ -12961,7 +13000,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
   }
   if (is_float) {
     const bool dirty_end = jsoncharutils::is_not_structural_or_whitespace(*p);
-    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer) );
+    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer, index) );
     if (dirty_end) { return INVALID_NUMBER(src); }
     return SUCCESS;
   }
@@ -12975,7 +13014,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
     if (negative) {
       // Anything negative above INT64_MAX+1 is invalid
       if (i > uint64_t(INT64_MAX)+1) { return INVALID_NUMBER(src);  }
-      WRITE_INTEGER(~i+1, src, writer);
+      WRITE_INTEGER(~i+1, src, writer, index);
       if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
       return SUCCESS;
     // Positive overflow check:
@@ -12995,9 +13034,9 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
   // Write unsigned if it doesn't fit in a signed integer.
   if (i > uint64_t(INT64_MAX)) {
-    WRITE_UNSIGNED(i, src, writer);
+    WRITE_UNSIGNED(i, src, writer, index);
   } else {
-    WRITE_INTEGER(negative ? (~i+1) : i, src, writer);
+    WRITE_INTEGER(negative ? (~i+1) : i, src, writer, index);
   }
   if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
   return SUCCESS;
@@ -14583,7 +14622,7 @@ namespace ondemand {
 /**
  * The type of a JSON number
  */
-enum class number_type {
+enum class number_type : uint8_t {
     floating_point_number=1, /// a binary64 number
     signed_integer,          /// a signed integer that fits in a 64-bit word using two's complement
     unsigned_integer         /// a positive integer larger or equal to 1<<63
@@ -14598,14 +14637,14 @@ namespace numberparsing {
 
 #ifdef JSON_TEST_NUMBERS
 #define INVALID_NUMBER(SRC) (found_invalid_number((SRC)), NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE)))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE)))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE)))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE), (INDEX)))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE), (INDEX)))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE), (INDEX)))
 #else
 #define INVALID_NUMBER(SRC) (NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (WRITER).append_s64((VALUE))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (WRITER).append_u64((VALUE))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (WRITER).append_double((VALUE))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (WRITER).append_s64((VALUE), (INDEX))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (WRITER).append_u64((VALUE), (INDEX))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (WRITER).append_double((VALUE), (INDEX))
 #endif
 
 namespace {
@@ -14926,10 +14965,10 @@ simdjson_inline bool is_made_of_eight_digits_fast(const uint8_t *chars) {
 }
 
 template<typename W>
-error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer) {
+error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer, uint32_t index) {
   double d;
   if (parse_float_fallback(src, &d)) {
-    writer.append_double(d);
+    writer.append_double(d, index);
     return SUCCESS;
   }
   return INVALID_NUMBER(src);
@@ -15036,7 +15075,7 @@ simdjson_inline size_t significant_digits(const uint8_t * start_digits, size_t d
 }
 
 template<typename W>
-simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer) {
+simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer, uint32_t index) {
   // If we frequently had to deal with long strings of digits,
   // we could extend our code by using a 128-bit integer instead
   // of a 64-bit integer. However, this is uncommon in practice.
@@ -15057,7 +15096,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // it, it would force it to be stored in memory, preventing the compiler from picking it apart
     // and putting into registers. i.e. if we pass it as reference, it gets slow.
     // This is what forces the skip_double, as well.
-    error_code error = slow_float_parsing(src, writer);
+    error_code error = slow_float_parsing(src, writer, index);
     writer.skip_double();
     return error;
   }
@@ -15072,7 +15111,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     static_assert(simdjson::internal::smallest_power <= -342, "smallest_power is not small enough");
     //
     if((exponent < simdjson::internal::smallest_power) || (i == 0)) {
-      WRITE_DOUBLE(0, src, writer);
+      WRITE_DOUBLE(0, src, writer, index);
       return SUCCESS;
     } else { // (exponent > largest_power) and (i != 0)
       // We have, for sure, an infinite value and simdjson refuses to parse infinite values.
@@ -15084,16 +15123,17 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // we are almost never going to get here.
     if (!parse_float_fallback(src, &d)) { return INVALID_NUMBER(src); }
   }
-  WRITE_DOUBLE(d, src, writer);
+  WRITE_DOUBLE(d, src, writer, index);
   return SUCCESS;
 }
 
 // for performance analysis, it is sometimes  useful to skip parsing
 #ifdef SIMDJSON_SKIPNUMBERPARSING
+  // TODO: update these
 
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const, W &writer) {
-  writer.append_s64(0);        // always write zero
+simdjson_inline error_code parse_number(const uint8_t *const, W &writer, uint32_t index) {
+  writer.append_s64(0, 0);        // always write zero
   return SUCCESS;              // always succeeds
 }
 
@@ -15118,9 +15158,8 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 //
 // Our objective is accurate parsing (ULP of 0) at high speed.
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
+simdjson_inline error_code parse_number(const uint8_t *const src, W &writer, uint32_t index) {
 
-    abort();
   //
   // Check for minus sign
   //
@@ -15158,7 +15197,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
   }
   if (is_float) {
     const bool dirty_end = jsoncharutils::is_not_structural_or_whitespace(*p);
-    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer) );
+    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer, index) );
     if (dirty_end) { return INVALID_NUMBER(src); }
     return SUCCESS;
   }
@@ -15172,7 +15211,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
     if (negative) {
       // Anything negative above INT64_MAX+1 is invalid
       if (i > uint64_t(INT64_MAX)+1) { return INVALID_NUMBER(src);  }
-      WRITE_INTEGER(~i+1, src, writer);
+      WRITE_INTEGER(~i+1, src, writer, index);
       if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
       return SUCCESS;
     // Positive overflow check:
@@ -15192,9 +15231,9 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
   // Write unsigned if it doesn't fit in a signed integer.
   if (i > uint64_t(INT64_MAX)) {
-    WRITE_UNSIGNED(i, src, writer);
+    WRITE_UNSIGNED(i, src, writer, index);
   } else {
-    WRITE_INTEGER(negative ? (~i+1) : i, src, writer);
+    WRITE_INTEGER(negative ? (~i+1) : i, src, writer, index);
   }
   if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
   return SUCCESS;
@@ -16767,7 +16806,7 @@ namespace ondemand {
 /**
  * The type of a JSON number
  */
-enum class number_type {
+enum class number_type : uint8_t {
     floating_point_number=1, /// a binary64 number
     signed_integer,          /// a signed integer that fits in a 64-bit word using two's complement
     unsigned_integer         /// a positive integer larger or equal to 1<<63
@@ -16782,14 +16821,14 @@ namespace numberparsing {
 
 #ifdef JSON_TEST_NUMBERS
 #define INVALID_NUMBER(SRC) (found_invalid_number((SRC)), NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE)))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE)))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE)))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE), (INDEX)))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE), (INDEX)))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE), (INDEX)))
 #else
 #define INVALID_NUMBER(SRC) (NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (WRITER).append_s64((VALUE))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (WRITER).append_u64((VALUE))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (WRITER).append_double((VALUE))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (WRITER).append_s64((VALUE), (INDEX))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (WRITER).append_u64((VALUE), (INDEX))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (WRITER).append_double((VALUE), (INDEX))
 #endif
 
 namespace {
@@ -17110,10 +17149,10 @@ simdjson_inline bool is_made_of_eight_digits_fast(const uint8_t *chars) {
 }
 
 template<typename W>
-error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer) {
+error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer, uint32_t index) {
   double d;
   if (parse_float_fallback(src, &d)) {
-    writer.append_double(d);
+    writer.append_double(d, index);
     return SUCCESS;
   }
   return INVALID_NUMBER(src);
@@ -17220,7 +17259,7 @@ simdjson_inline size_t significant_digits(const uint8_t * start_digits, size_t d
 }
 
 template<typename W>
-simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer) {
+simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer, uint32_t index) {
   // If we frequently had to deal with long strings of digits,
   // we could extend our code by using a 128-bit integer instead
   // of a 64-bit integer. However, this is uncommon in practice.
@@ -17241,7 +17280,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // it, it would force it to be stored in memory, preventing the compiler from picking it apart
     // and putting into registers. i.e. if we pass it as reference, it gets slow.
     // This is what forces the skip_double, as well.
-    error_code error = slow_float_parsing(src, writer);
+    error_code error = slow_float_parsing(src, writer, index);
     writer.skip_double();
     return error;
   }
@@ -17256,7 +17295,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     static_assert(simdjson::internal::smallest_power <= -342, "smallest_power is not small enough");
     //
     if((exponent < simdjson::internal::smallest_power) || (i == 0)) {
-      WRITE_DOUBLE(0, src, writer);
+      WRITE_DOUBLE(0, src, writer, index);
       return SUCCESS;
     } else { // (exponent > largest_power) and (i != 0)
       // We have, for sure, an infinite value and simdjson refuses to parse infinite values.
@@ -17268,16 +17307,17 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // we are almost never going to get here.
     if (!parse_float_fallback(src, &d)) { return INVALID_NUMBER(src); }
   }
-  WRITE_DOUBLE(d, src, writer);
+  WRITE_DOUBLE(d, src, writer, index);
   return SUCCESS;
 }
 
 // for performance analysis, it is sometimes  useful to skip parsing
 #ifdef SIMDJSON_SKIPNUMBERPARSING
+  // TODO: update these
 
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const, W &writer) {
-  writer.append_s64(0);        // always write zero
+simdjson_inline error_code parse_number(const uint8_t *const, W &writer, uint32_t index) {
+  writer.append_s64(0, 0);        // always write zero
   return SUCCESS;              // always succeeds
 }
 
@@ -17302,9 +17342,8 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 //
 // Our objective is accurate parsing (ULP of 0) at high speed.
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
+simdjson_inline error_code parse_number(const uint8_t *const src, W &writer, uint32_t index) {
 
-    abort();
   //
   // Check for minus sign
   //
@@ -17342,7 +17381,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
   }
   if (is_float) {
     const bool dirty_end = jsoncharutils::is_not_structural_or_whitespace(*p);
-    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer) );
+    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer, index) );
     if (dirty_end) { return INVALID_NUMBER(src); }
     return SUCCESS;
   }
@@ -17356,7 +17395,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
     if (negative) {
       // Anything negative above INT64_MAX+1 is invalid
       if (i > uint64_t(INT64_MAX)+1) { return INVALID_NUMBER(src);  }
-      WRITE_INTEGER(~i+1, src, writer);
+      WRITE_INTEGER(~i+1, src, writer, index);
       if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
       return SUCCESS;
     // Positive overflow check:
@@ -17376,9 +17415,9 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
   // Write unsigned if it doesn't fit in a signed integer.
   if (i > uint64_t(INT64_MAX)) {
-    WRITE_UNSIGNED(i, src, writer);
+    WRITE_UNSIGNED(i, src, writer, index);
   } else {
-    WRITE_INTEGER(negative ? (~i+1) : i, src, writer);
+    WRITE_INTEGER(negative ? (~i+1) : i, src, writer, index);
   }
   if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
   return SUCCESS;
@@ -19061,7 +19100,7 @@ namespace ondemand {
 /**
  * The type of a JSON number
  */
-enum class number_type {
+enum class number_type : uint8_t {
     floating_point_number=1, /// a binary64 number
     signed_integer,          /// a signed integer that fits in a 64-bit word using two's complement
     unsigned_integer         /// a positive integer larger or equal to 1<<63
@@ -19076,14 +19115,14 @@ namespace numberparsing {
 
 #ifdef JSON_TEST_NUMBERS
 #define INVALID_NUMBER(SRC) (found_invalid_number((SRC)), NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE)))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE)))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE)))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE), (INDEX)))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE), (INDEX)))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE), (INDEX)))
 #else
 #define INVALID_NUMBER(SRC) (NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (WRITER).append_s64((VALUE))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (WRITER).append_u64((VALUE))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (WRITER).append_double((VALUE))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (WRITER).append_s64((VALUE), (INDEX))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (WRITER).append_u64((VALUE), (INDEX))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (WRITER).append_double((VALUE), (INDEX))
 #endif
 
 namespace {
@@ -19404,10 +19443,10 @@ simdjson_inline bool is_made_of_eight_digits_fast(const uint8_t *chars) {
 }
 
 template<typename W>
-error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer) {
+error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer, uint32_t index) {
   double d;
   if (parse_float_fallback(src, &d)) {
-    writer.append_double(d);
+    writer.append_double(d, index);
     return SUCCESS;
   }
   return INVALID_NUMBER(src);
@@ -19514,7 +19553,7 @@ simdjson_inline size_t significant_digits(const uint8_t * start_digits, size_t d
 }
 
 template<typename W>
-simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer) {
+simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer, uint32_t index) {
   // If we frequently had to deal with long strings of digits,
   // we could extend our code by using a 128-bit integer instead
   // of a 64-bit integer. However, this is uncommon in practice.
@@ -19535,7 +19574,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // it, it would force it to be stored in memory, preventing the compiler from picking it apart
     // and putting into registers. i.e. if we pass it as reference, it gets slow.
     // This is what forces the skip_double, as well.
-    error_code error = slow_float_parsing(src, writer);
+    error_code error = slow_float_parsing(src, writer, index);
     writer.skip_double();
     return error;
   }
@@ -19550,7 +19589,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     static_assert(simdjson::internal::smallest_power <= -342, "smallest_power is not small enough");
     //
     if((exponent < simdjson::internal::smallest_power) || (i == 0)) {
-      WRITE_DOUBLE(0, src, writer);
+      WRITE_DOUBLE(0, src, writer, index);
       return SUCCESS;
     } else { // (exponent > largest_power) and (i != 0)
       // We have, for sure, an infinite value and simdjson refuses to parse infinite values.
@@ -19562,16 +19601,17 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // we are almost never going to get here.
     if (!parse_float_fallback(src, &d)) { return INVALID_NUMBER(src); }
   }
-  WRITE_DOUBLE(d, src, writer);
+  WRITE_DOUBLE(d, src, writer, index);
   return SUCCESS;
 }
 
 // for performance analysis, it is sometimes  useful to skip parsing
 #ifdef SIMDJSON_SKIPNUMBERPARSING
+  // TODO: update these
 
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const, W &writer) {
-  writer.append_s64(0);        // always write zero
+simdjson_inline error_code parse_number(const uint8_t *const, W &writer, uint32_t index) {
+  writer.append_s64(0, 0);        // always write zero
   return SUCCESS;              // always succeeds
 }
 
@@ -19596,9 +19636,8 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 //
 // Our objective is accurate parsing (ULP of 0) at high speed.
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
+simdjson_inline error_code parse_number(const uint8_t *const src, W &writer, uint32_t index) {
 
-    abort();
   //
   // Check for minus sign
   //
@@ -19636,7 +19675,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
   }
   if (is_float) {
     const bool dirty_end = jsoncharutils::is_not_structural_or_whitespace(*p);
-    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer) );
+    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer, index) );
     if (dirty_end) { return INVALID_NUMBER(src); }
     return SUCCESS;
   }
@@ -19650,7 +19689,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
     if (negative) {
       // Anything negative above INT64_MAX+1 is invalid
       if (i > uint64_t(INT64_MAX)+1) { return INVALID_NUMBER(src);  }
-      WRITE_INTEGER(~i+1, src, writer);
+      WRITE_INTEGER(~i+1, src, writer, index);
       if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
       return SUCCESS;
     // Positive overflow check:
@@ -19670,9 +19709,9 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
   // Write unsigned if it doesn't fit in a signed integer.
   if (i > uint64_t(INT64_MAX)) {
-    WRITE_UNSIGNED(i, src, writer);
+    WRITE_UNSIGNED(i, src, writer, index);
   } else {
-    WRITE_INTEGER(negative ? (~i+1) : i, src, writer);
+    WRITE_INTEGER(negative ? (~i+1) : i, src, writer, index);
   }
   if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
   return SUCCESS;
@@ -21203,7 +21242,7 @@ namespace ondemand {
 /**
  * The type of a JSON number
  */
-enum class number_type {
+enum class number_type : uint8_t {
     floating_point_number=1, /// a binary64 number
     signed_integer,          /// a signed integer that fits in a 64-bit word using two's complement
     unsigned_integer         /// a positive integer larger or equal to 1<<63
@@ -21218,14 +21257,14 @@ namespace numberparsing {
 
 #ifdef JSON_TEST_NUMBERS
 #define INVALID_NUMBER(SRC) (found_invalid_number((SRC)), NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE)))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE)))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE)))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (found_integer((VALUE), (SRC)), (WRITER).append_s64((VALUE), (INDEX)))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (found_unsigned_integer((VALUE), (SRC)), (WRITER).append_u64((VALUE), (INDEX)))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (found_float((VALUE), (SRC)), (WRITER).append_double((VALUE), (INDEX)))
 #else
 #define INVALID_NUMBER(SRC) (NUMBER_ERROR)
-#define WRITE_INTEGER(VALUE, SRC, WRITER) (WRITER).append_s64((VALUE))
-#define WRITE_UNSIGNED(VALUE, SRC, WRITER) (WRITER).append_u64((VALUE))
-#define WRITE_DOUBLE(VALUE, SRC, WRITER) (WRITER).append_double((VALUE))
+#define WRITE_INTEGER(VALUE, SRC, WRITER, INDEX) (WRITER).append_s64((VALUE), (INDEX))
+#define WRITE_UNSIGNED(VALUE, SRC, WRITER, INDEX) (WRITER).append_u64((VALUE), (INDEX))
+#define WRITE_DOUBLE(VALUE, SRC, WRITER, INDEX) (WRITER).append_double((VALUE), (INDEX))
 #endif
 
 namespace {
@@ -21546,10 +21585,10 @@ simdjson_inline bool is_made_of_eight_digits_fast(const uint8_t *chars) {
 }
 
 template<typename W>
-error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer) {
+error_code slow_float_parsing(simdjson_unused const uint8_t * src, W writer, uint32_t index) {
   double d;
   if (parse_float_fallback(src, &d)) {
-    writer.append_double(d);
+    writer.append_double(d, index);
     return SUCCESS;
   }
   return INVALID_NUMBER(src);
@@ -21656,7 +21695,7 @@ simdjson_inline size_t significant_digits(const uint8_t * start_digits, size_t d
 }
 
 template<typename W>
-simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer) {
+simdjson_inline error_code write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer, uint32_t index) {
   // If we frequently had to deal with long strings of digits,
   // we could extend our code by using a 128-bit integer instead
   // of a 64-bit integer. However, this is uncommon in practice.
@@ -21677,7 +21716,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // it, it would force it to be stored in memory, preventing the compiler from picking it apart
     // and putting into registers. i.e. if we pass it as reference, it gets slow.
     // This is what forces the skip_double, as well.
-    error_code error = slow_float_parsing(src, writer);
+    error_code error = slow_float_parsing(src, writer, index);
     writer.skip_double();
     return error;
   }
@@ -21692,7 +21731,7 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     static_assert(simdjson::internal::smallest_power <= -342, "smallest_power is not small enough");
     //
     if((exponent < simdjson::internal::smallest_power) || (i == 0)) {
-      WRITE_DOUBLE(0, src, writer);
+      WRITE_DOUBLE(0, src, writer, index);
       return SUCCESS;
     } else { // (exponent > largest_power) and (i != 0)
       // We have, for sure, an infinite value and simdjson refuses to parse infinite values.
@@ -21704,16 +21743,17 @@ simdjson_inline error_code write_float(const uint8_t *const src, bool negative, 
     // we are almost never going to get here.
     if (!parse_float_fallback(src, &d)) { return INVALID_NUMBER(src); }
   }
-  WRITE_DOUBLE(d, src, writer);
+  WRITE_DOUBLE(d, src, writer, index);
   return SUCCESS;
 }
 
 // for performance analysis, it is sometimes  useful to skip parsing
 #ifdef SIMDJSON_SKIPNUMBERPARSING
+  // TODO: update these
 
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const, W &writer) {
-  writer.append_s64(0);        // always write zero
+simdjson_inline error_code parse_number(const uint8_t *const, W &writer, uint32_t index) {
+  writer.append_s64(0, 0);        // always write zero
   return SUCCESS;              // always succeeds
 }
 
@@ -21738,9 +21778,8 @@ simdjson_unused simdjson_inline simdjson_result<ondemand::number_type> get_numbe
 //
 // Our objective is accurate parsing (ULP of 0) at high speed.
 template<typename W>
-simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
+simdjson_inline error_code parse_number(const uint8_t *const src, W &writer, uint32_t index) {
 
-    abort();
   //
   // Check for minus sign
   //
@@ -21778,7 +21817,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
   }
   if (is_float) {
     const bool dirty_end = jsoncharutils::is_not_structural_or_whitespace(*p);
-    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer) );
+    SIMDJSON_TRY( write_float(src, negative, i, start_digits, digit_count, exponent, writer, index) );
     if (dirty_end) { return INVALID_NUMBER(src); }
     return SUCCESS;
   }
@@ -21792,7 +21831,7 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
     if (negative) {
       // Anything negative above INT64_MAX+1 is invalid
       if (i > uint64_t(INT64_MAX)+1) { return INVALID_NUMBER(src);  }
-      WRITE_INTEGER(~i+1, src, writer);
+      WRITE_INTEGER(~i+1, src, writer, index);
       if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
       return SUCCESS;
     // Positive overflow check:
@@ -21812,9 +21851,9 @@ simdjson_inline error_code parse_number(const uint8_t *const src, W &writer) {
 
   // Write unsigned if it doesn't fit in a signed integer.
   if (i > uint64_t(INT64_MAX)) {
-    WRITE_UNSIGNED(i, src, writer);
+    WRITE_UNSIGNED(i, src, writer, index);
   } else {
-    WRITE_INTEGER(negative ? (~i+1) : i, src, writer);
+    WRITE_INTEGER(negative ? (~i+1) : i, src, writer, index);
   }
   if (jsoncharutils::is_not_structural_or_whitespace(*p)) { return INVALID_NUMBER(src); }
   return SUCCESS;
@@ -22722,17 +22761,17 @@ protected:
    */
   friend class value_iterator;
   template<typename W>
-  friend error_code numberparsing::write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer);
+  friend error_code numberparsing::write_float(const uint8_t *const src, bool negative, uint64_t i, const uint8_t * start_digits, size_t digit_count, int64_t exponent, W &writer, uint32_t index);
   template<typename W>
-  friend error_code numberparsing::parse_number(const uint8_t *const src, W &writer);
+  friend error_code numberparsing::parse_number(const uint8_t *const src, W &writer, uint32_t index);
   template<typename W>
-  friend error_code numberparsing::slow_float_parsing(simdjson_unused const uint8_t * src, W writer);
+  friend error_code numberparsing::slow_float_parsing(simdjson_unused const uint8_t * src, W writer, uint32_t index);
   /** Store a signed 64-bit value to the number. */
-  simdjson_inline void append_s64(int64_t value) noexcept;
+  simdjson_inline void append_s64(int64_t value, uint32_t index) noexcept;
   /** Store an unsigned 64-bit value to the number. */
-  simdjson_inline void append_u64(uint64_t value) noexcept;
+  simdjson_inline void append_u64(uint64_t value, uint32_t index) noexcept;
   /** Store a double value to the number. */
-  simdjson_inline void append_double(double value) noexcept;
+  simdjson_inline void append_double(double value, uint32_t index) noexcept;
   /** Specifies that the value is a double, but leave it undefined. */
   simdjson_inline void skip_double() noexcept;
   /**
@@ -23292,6 +23331,14 @@ public:
    * Advance the current token without modifying depth.
    */
   simdjson_inline const uint8_t *return_current_and_advance() noexcept;
+
+  /**
+   * Returns true if there is a single token in the index (i.e., it is
+   * a JSON with a scalar value such as a single number).
+   *
+   * @return whether there is a single token
+   */
+  simdjson_inline bool is_single_token() const noexcept;
 
   /**
    * Assert that there are at least the given number of tokens left.
@@ -26961,17 +27008,17 @@ simdjson_inline double number::as_double() const noexcept {
   return double(payload.unsigned_integer);
 }
 
-simdjson_inline void number::append_s64(int64_t value) noexcept {
+simdjson_inline void number::append_s64(int64_t value, simdjson_unused uint32_t index) noexcept {
   payload.signed_integer = value;
   type = number_type::signed_integer;
 }
 
-simdjson_inline void number::append_u64(uint64_t value) noexcept {
+simdjson_inline void number::append_u64(uint64_t value, simdjson_unused uint32_t index) noexcept {
   payload.unsigned_integer = value;
   type = number_type::unsigned_integer;
 }
 
-simdjson_inline void number::append_double(double value) noexcept {
+simdjson_inline void number::append_double(double value, simdjson_unused uint32_t index) noexcept {
   payload.floating_point_number = value;
   type = number_type::floating_point_number;
 }
@@ -27582,6 +27629,10 @@ SIMDJSON_POP_DISABLE_WARNINGS
 
 simdjson_inline bool json_iterator::at_root() const noexcept {
   return position() == root_position();
+}
+
+simdjson_inline bool json_iterator::is_single_token() const noexcept {
+  return parser->implementation->n_structural_indexes == 1;
 }
 
 simdjson_inline bool json_iterator::streaming() const noexcept {
@@ -28344,7 +28395,7 @@ simdjson_inline simdjson_result<number_type> value_iterator::get_number_type() n
 }
 simdjson_inline simdjson_result<number> value_iterator::get_number() noexcept {
   number num;
-  error_code error =  numberparsing::parse_number(peek_non_root_scalar("number"), num);
+  error_code error =  numberparsing::parse_number(peek_non_root_scalar("number"), num, 0 /* index not needed */);
   if(error) { return error; }
   return num;
 }
@@ -28356,10 +28407,16 @@ simdjson_inline simdjson_result<bool> value_iterator::is_root_integer() noexcept
   if (!_json_iter->copy_to_buffer(json, max_len, tmpbuf)) {
     return false; // if there are more than 20 characters, it cannot be represented as an integer.
   }
-  return numberparsing::is_integer(tmpbuf);
+  auto answer = numberparsing::is_integer(tmpbuf);
+  // If the parsing was a success, we must still check that it is
+  // a single scalar. Note that we parse first because of cases like '[]' where
+  // getting TRAILING_CONTENT is wrong.
+  if((answer.error() == SUCCESS) && (!_json_iter->is_single_token())) { return TRAILING_CONTENT; }
+  return answer;
 }
 
 simdjson_inline simdjson_result<SIMDJSON_BUILTIN_IMPLEMENTATION::ondemand::number_type> value_iterator::get_root_number_type() noexcept {
+  if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
   auto max_len = peek_start_length();
   auto json = peek_root_scalar("number");
   // Per https://www.exploringbinary.com/maximum-number-of-decimal-digits-in-binary-floating-point-numbers/,
@@ -28370,7 +28427,12 @@ simdjson_inline simdjson_result<SIMDJSON_BUILTIN_IMPLEMENTATION::ondemand::numbe
     logger::log_error(*_json_iter, start_position(), depth(), "Root number more than 1082 characters");
     return NUMBER_ERROR;
   }
-  return numberparsing::get_number_type(tmpbuf);
+  // If the parsing was a success, we must still check that it is
+  // a single scalar. Note that we parse first because of cases like '[]' where
+  // getting TRAILING_CONTENT is wrong.
+  auto answer = numberparsing::get_number_type(tmpbuf);
+  if((answer.error() == SUCCESS) && (!_json_iter->is_single_token())) { return TRAILING_CONTENT; }
+  return answer;
 }
 simdjson_inline simdjson_result<number> value_iterator::get_root_number() noexcept {
   auto max_len = peek_start_length();
@@ -28384,8 +28446,9 @@ simdjson_inline simdjson_result<number> value_iterator::get_root_number() noexce
     return NUMBER_ERROR;
   }
   number num;
-  error_code error =  numberparsing::parse_number(tmpbuf, num);
+  error_code error =  numberparsing::parse_number(tmpbuf, num, 0 /* index not needed */);
   if(error) { return error; }
+  if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
   advance_root_scalar("number");
   return num;
 }
@@ -28405,7 +28468,10 @@ simdjson_warn_unused simdjson_inline simdjson_result<uint64_t> value_iterator::g
     return NUMBER_ERROR;
   }
   auto result = numberparsing::parse_unsigned(tmpbuf);
-  if(result.error() == SUCCESS) { advance_root_scalar("uint64"); }
+  if(result.error() == SUCCESS) {
+    if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
+    advance_root_scalar("uint64");
+  }
   return result;
 }
 simdjson_warn_unused simdjson_inline simdjson_result<uint64_t> value_iterator::get_root_uint64_in_string() noexcept {
@@ -28417,7 +28483,10 @@ simdjson_warn_unused simdjson_inline simdjson_result<uint64_t> value_iterator::g
     return NUMBER_ERROR;
   }
   auto result = numberparsing::parse_unsigned_in_string(tmpbuf);
-  if(result.error() == SUCCESS) { advance_root_scalar("uint64"); }
+  if(result.error() == SUCCESS) {
+    if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
+    advance_root_scalar("uint64");
+  }
   return result;
 }
 simdjson_warn_unused simdjson_inline simdjson_result<int64_t> value_iterator::get_root_int64() noexcept {
@@ -28430,7 +28499,10 @@ simdjson_warn_unused simdjson_inline simdjson_result<int64_t> value_iterator::ge
   }
 
   auto result = numberparsing::parse_integer(tmpbuf);
-  if(result.error() == SUCCESS) { advance_root_scalar("int64"); }
+  if(result.error() == SUCCESS) {
+    if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
+    advance_root_scalar("int64");
+  }
   return result;
 }
 simdjson_warn_unused simdjson_inline simdjson_result<int64_t> value_iterator::get_root_int64_in_string() noexcept {
@@ -28443,7 +28515,10 @@ simdjson_warn_unused simdjson_inline simdjson_result<int64_t> value_iterator::ge
   }
 
   auto result = numberparsing::parse_integer_in_string(tmpbuf);
-  if(result.error() == SUCCESS) { advance_root_scalar("int64"); }
+  if(result.error() == SUCCESS) {
+    if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
+    advance_root_scalar("int64");
+  }
   return result;
 }
 simdjson_warn_unused simdjson_inline simdjson_result<double> value_iterator::get_root_double() noexcept {
@@ -28458,7 +28533,10 @@ simdjson_warn_unused simdjson_inline simdjson_result<double> value_iterator::get
     return NUMBER_ERROR;
   }
   auto result = numberparsing::parse_double(tmpbuf);
-  if(result.error() == SUCCESS) { advance_root_scalar("double"); }
+  if(result.error() == SUCCESS) {
+    if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
+    advance_root_scalar("double");
+  }
   return result;
 }
 
@@ -28474,7 +28552,10 @@ simdjson_warn_unused simdjson_inline simdjson_result<double> value_iterator::get
     return NUMBER_ERROR;
   }
   auto result = numberparsing::parse_double_in_string(tmpbuf);
-  if(result.error() == SUCCESS) { advance_root_scalar("double"); }
+  if(result.error() == SUCCESS) {
+    if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
+    advance_root_scalar("double");
+  }
   return result;
 }
 simdjson_warn_unused simdjson_inline simdjson_result<bool> value_iterator::get_root_bool() noexcept {
@@ -28483,10 +28564,15 @@ simdjson_warn_unused simdjson_inline simdjson_result<bool> value_iterator::get_r
   uint8_t tmpbuf[5+1];
   if (!_json_iter->copy_to_buffer(json, max_len, tmpbuf)) { return incorrect_type_error("Not a boolean"); }
   auto result = parse_bool(tmpbuf);
-  if(result.error() == SUCCESS) { advance_root_scalar("bool"); }
+  if(result.error() == SUCCESS) {
+    if (!_json_iter->is_single_token()) { return TRAILING_CONTENT; }
+    advance_root_scalar("bool");
+  }
   return result;
 }
 simdjson_inline bool value_iterator::is_root_null() noexcept {
+  // If there is trailing content, then the document is not null.
+  if (!_json_iter->is_single_token()) { return false; }
   auto max_len = peek_start_length();
   auto json = peek_root_scalar("null");
   bool result = (max_len >= 4 && !atomparsing::str4ncmp(json, "null") &&
