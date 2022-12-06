@@ -139,9 +139,9 @@ static inline void JNTSetError(std::string description, JNTDecodingErrorType typ
 
 static void JNTHandleWrongType(JNTDecoder decoder, dom::element_type type, const char *expectedType) {
     JNTDecodingErrorType errorType = type == dom::element_type::NULL_VALUE ? JNTDecodingErrorTypeValueDoesNotExist : JNTDecodingErrorTypeWrongType;
-    std::ostringstream oss;
-    oss << "Expected to decode " << expectedType << " but found " << JNTStringForType(type) << " instead.";
-    JNTSetError(oss.str(), errorType, decoder.context, decoder, "");
+    char buffer[50];
+    snprintf(buffer, sizeof(buffer), "Expected to decode %s but found %s instead.", expectedType, JNTStringForType(type));
+    JNTSetError(std::string(buffer), errorType, decoder.context, decoder, "");
 }
 
 static void JNTHandleMemberDoesNotExist(JNTDecoder decoder, const char *key) {
