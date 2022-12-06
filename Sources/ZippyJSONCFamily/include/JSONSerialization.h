@@ -1,6 +1,10 @@
 //Copyright (c) 2018 Michael Eisel. All rights reserved. 
 #import <Foundation/Foundation.h>
 
+#ifdef __cplusplus
+#import "simdjson.h"
+#endif
+
 CF_EXTERN_C_BEGIN
 
 typedef CF_ENUM(size_t, JNTDecodingErrorType) {
@@ -40,6 +44,16 @@ struct JNTDecoderStorage {
 struct JNTDecoder;
 typedef simdjson::dom::array::iterator JNTArrayIterator;
 typedef simdjson::dom::object::iterator JNTDictionaryIterator;
+
+struct JNTContext;
+
+struct JNTDecoder {
+    simdjson::dom::element element;
+    JNTContext *context;
+    size_t depth;
+};
+
+
 #else
 typedef struct JNTDecoderStorage JNTDecoder;
 typedef struct JNTElementStorage JNTArrayIterator;
@@ -48,6 +62,13 @@ typedef struct JNTElementStorage JNTDictionaryIterator;
 
 //typedef JNTDecoder Decoder;
 typedef JNTDecoder *DecoderPointer;
+
+typedef struct {
+    const char *description;
+    JNTDecodingErrorType type;
+    JNTDecoder value;
+    const char *key;
+} JNTErrorInfo;
 
 const char *JNTDocumentKeyFromIterator(JNTDictionaryIterator iterator);
 JNTDecoder JNTDecoderFromIterator(JNTArrayIterator *iterator, JNTDecoder root);
@@ -62,7 +83,7 @@ bool JNTHasVectorExtensions();
 ContextPointer JNTCreateContext(const char *originalString, uint32_t originalStringLength, const char *negInfString, const char *posInfString, const char *nanString, BOOL stringsForFloats);
 JNTDecoder JNTDocumentFromJSON(ContextPointer context, const void *data, NSInteger length, bool convertCase, const char * *retryReason, bool *success);
 bool JNTDocumentContains(JNTDecoder decoder, const char *key, JNTDictionaryIterator *iteratorPtr);
-void JNTProcessError(ContextPointer context, void (^block)(const char *description, JNTDecodingErrorType type, JNTDecoder value, const char *key));
+void JNTGetErrorInfo(ContextPointer context, JNTErrorInfo *info);
 bool JNTErrorDidOccur(ContextPointer context);
 JNTDecoder JNTDocumentFetchValue(JNTDecoder decoder, const char *key, JNTDictionaryIterator *iteratorPtr);
 bool JNTDocumentDecodeNil(JNTDecoder documentPtr);
