@@ -1,10 +1,6 @@
 //Copyright (c) 2018 Michael Eisel. All rights reserved. 
 #import <Foundation/Foundation.h>
 
-#ifdef __cplusplus
-#import "simdjson.h"
-#endif
-
 CF_EXTERN_C_BEGIN
 
 typedef CF_ENUM(size_t, JNTDecodingErrorType) {

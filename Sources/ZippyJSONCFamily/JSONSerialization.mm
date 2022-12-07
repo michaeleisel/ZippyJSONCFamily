@@ -2,6 +2,7 @@
 
 // NOTE: ARC is disabled for this file
 
+#import "simdjson.h"
 #import "JSONSerialization.h"
 #import <CoreFoundation/CoreFoundation.h>
 #import <Foundation/Foundation.h>
@@ -13,6 +14,7 @@
 #import <typeinfo>
 #import <deque>
 #import <dispatch/dispatch.h>
+
 
 #define JNT_UNLIKELY(x) __builtin_expect(!!(x), 0)
 
