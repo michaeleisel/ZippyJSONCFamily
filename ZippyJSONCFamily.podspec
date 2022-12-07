@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'ZippyJSONCFamily'
-  s.version          = '1.2.6'
+  s.version          = '0.2.6'
   s.summary          = 'Support lib for ZippyJSON'
 
 # This description is used to generate tags and improve search results.
