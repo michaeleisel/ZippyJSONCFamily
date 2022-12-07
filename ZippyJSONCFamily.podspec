@@ -8,7 +8,7 @@
 
 Pod::Spec.new do |s|
   s.name             = 'ZippyJSONCFamily'
-  s.version          = '0.2.8'
+  s.version          = '0.2.9'
   s.summary          = 'Support lib for ZippyJSON'
 
 # This description is used to generate tags and improve search results.
@@ -37,6 +37,6 @@ This is a library meant only to support ZippyJSON and provide a workaround for a
   }
 
   s.source_files = 'Sources/**/*.{h,hh,mm,m,c,cpp,swift}'
-  s.public_header_files = 'Sources/**/*.h'
+  s.public_header_files = 'Sources/ZippyJSONCFamily/include/*.h'
   s.private_header_files = ['Sources/ZippyJSONCFamily/*.h']
 end
